@@ -41,6 +41,12 @@ const FIELD_AR = {
   quantity: "الكمية",
   costPrice: "سعر التكلفة",
   hireDate: "تاريخ التعيين",
+  phone: "الهاتف",
+  taxNumber: "الرقم الضريبي",
+  commercialRecord: "السجل التجاري",
+  contactPerson: "الشخص المسؤول",
+  creditLimit: "الحد الائتماني",
+  openingBalance: "الرصيد الافتتاحي",
 };
 
 const UNKNOWN_FIELD_AR = "أحد الحقول";

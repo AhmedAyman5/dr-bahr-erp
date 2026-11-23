@@ -4,11 +4,13 @@ import { Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import Branches from "../pages/Branches/Branches";
 import Categories from "../pages/Categories/Categories";
+import Customers from "../pages/Customers/Customers";
 import Home from "../pages/Home/Home";
 import Inventories from "../pages/Inventories/Inventories";
 import ItemUnits from "../pages/ItemUnits/ItemUnits";
 import Login from "../pages/Login/Login";
 import NotFound from "../pages/NotFound/NotFound";
+import Suppliers from "../pages/Suppliers/Suppliers";
 import ProtectedRoute from "./ProtectedRoute";
 import PublicOnlyRoute from "./PublicOnlyRoute";
 
@@ -38,6 +40,8 @@ function AppRoutes() {
         <Route path="inventories" element={<Inventories />} />
         <Route path="categories" element={<Categories />} />
         <Route path="units" element={<ItemUnits />} />
+        <Route path="customers" element={<Customers />} />
+        <Route path="suppliers" element={<Suppliers />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

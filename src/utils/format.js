@@ -26,3 +26,21 @@ export function formatDate(value) {
     day: "numeric",
   });
 }
+
+// formatMoney("1500") → "1,500.00"  |  "-250.5" → "-250.50"  |  empty / invalid → "-"
+// Always 2 decimals, Western digits, no currency symbol.
+// The minus sign is added by hand (the locale would add an invisible direction mark), so in RTL
+// show negative-capable values inside <span dir="ltr"> to keep the minus on the left.
+export function formatMoney(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return "-";
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+
+  const rounded = Math.round(number * 100) / 100;
+  const text = Math.abs(rounded).toLocaleString(LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return rounded < 0 ? `-${text}` : text;
+}
