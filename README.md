@@ -1,16 +1,73 @@
-# React + Vite
+# Dr. Bahr ERP — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The web frontend of **Dr. Bahr ERP**, an ERP system for an Egyptian import & distribution company.
+The UI is Arabic only (RTL). It talks to a separate NestJS backend API.
 
-Currently, two official plugins are available:
+**Stack:** React 19, Vite, JavaScript (JSX), Tailwind CSS v4, React Router, Axios, lucide-react.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Requirements
 
-## React Compiler
+- [Node.js](https://nodejs.org/) 20 or newer (with npm)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — to run the backend locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Folder layout
 
-## Expanding the ESLint configuration
+The backend and frontend repos live side by side in one parent folder:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```text
+dr-bahr/
+├── backend/     ← NestJS API (separate repo), API docs in backend/doc/
+└── frontend/    ← this repo
+```
+
+## Setup
+
+1. **Start the backend (required).**
+   Every page that talks to the API needs the backend running in Docker.
+   Open **Docker Desktop**, then run inside `../backend`:
+
+   ```bash
+   cd ../backend
+   docker compose up -d
+   ```
+
+   The API is then available on `http://localhost:3000`.
+   Without it, the app still opens but shows the message
+   _"تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى"_ (cannot connect to the server)
+   on login and on every page that loads data.
+
+2. **Create your local env file** (back in `frontend/`):
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+   It contains `VITE_API_URL=http://localhost:3000`. Restart the dev server after changing it.
+
+3. **Install and run:**
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+   Open `http://localhost:5173`.
+
+### Default local login
+
+| Username | Password   | Role       |
+| -------- | ---------- | ---------- |
+| `admin`  | `admin123` | SUPERADMIN |
+
+## Scripts
+
+```bash
+npm run dev      # development server
+npm run build    # production build
+npm run lint     # lint
+```
+
+## Rules
+
+Read [CLAUDE.md](./CLAUDE.md) before contributing: it describes the folder structure,
+the page pattern, the API rules and the design guidelines.
