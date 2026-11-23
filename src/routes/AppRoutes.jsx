@@ -5,6 +5,7 @@ import MainLayout from "../components/layout/MainLayout";
 import Branches from "../pages/Branches/Branches";
 import Categories from "../pages/Categories/Categories";
 import Customers from "../pages/Customers/Customers";
+import Employees from "../pages/Employees/Employees";
 import Home from "../pages/Home/Home";
 import Inventories from "../pages/Inventories/Inventories";
 import ItemUnits from "../pages/ItemUnits/ItemUnits";
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route path="stock" element={<ProductStock />} />
         <Route path="customers" element={<Customers />} />
         <Route path="suppliers" element={<Suppliers />} />
+        <Route path="employees" element={<Employees />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />
