@@ -16,7 +16,8 @@ import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
 import { getErrorMessage } from "../../utils/errors";
 import { formatMoney } from "../../utils/format";
-import { ITEM_TYPE_OPTIONS, deleteProduct, getCategories, getItemUnits, getProducts } from "./productsApi";
+import { ITEM_TYPES, getLabel } from "../../utils/labels";
+import { deleteProduct, getCategories, getItemUnits, getProducts } from "./productsApi";
 import ProductFormModal from "./components/ProductFormModal";
 
 const SUCCESS_HIDE_MS = 4000;
@@ -29,14 +30,13 @@ function renderPrice(value) {
 // Small colored label for the item type: مخزني (blue) / خدمي (gray).
 function renderItemType(row) {
   const isService = row.itemType === "SERVICE";
-  const label = ITEM_TYPE_OPTIONS.find((option) => option.value === row.itemType)?.label ?? "-";
   return (
     <span
       className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
         isService ? "bg-slate-100 text-slate-600" : "bg-primary-soft text-primary"
       }`}
     >
-      {label}
+      {getLabel(ITEM_TYPES, row.itemType)}
     </span>
   );
 }
@@ -214,7 +214,7 @@ function Products() {
             aria-label="تصفية حسب النوع"
             value={typeFilter}
             onChange={(event) => setTypeFilter(event.target.value)}
-            options={ITEM_TYPE_OPTIONS}
+            options={ITEM_TYPES}
             placeholder="كل الأنواع"
             className="w-full max-w-40"
           />

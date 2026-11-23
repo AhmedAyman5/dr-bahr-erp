@@ -12,8 +12,9 @@ import Input from "../../../components/ui/Input";
 import Modal from "../../../components/ui/Modal";
 import Select from "../../../components/ui/Select";
 import { getErrorMessage } from "../../../utils/errors";
+import { ITEM_TYPES } from "../../../utils/labels";
 import { validateMoney } from "../../../utils/money";
-import { ITEM_TYPE_OPTIONS, createProduct, updateProduct } from "../productsApi";
+import { createProduct, updateProduct } from "../productsApi";
 
 const FORM_ID = "product-form";
 
@@ -194,7 +195,7 @@ function ProductFormModal({ product, categories, units, onClose, onSaved }) {
             name="itemType"
             value={form.itemType}
             onChange={handleChange}
-            options={ITEM_TYPE_OPTIONS}
+            options={ITEM_TYPES}
           />
           {/* Only one costing method exists for now; it is never sent (server default). */}
           <Input label="طريقة حساب التكلفة" value="متوسط التكلفة المرجح" readOnly />

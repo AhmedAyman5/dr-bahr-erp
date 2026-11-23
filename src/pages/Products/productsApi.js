@@ -3,12 +3,6 @@
 import api from "../../services/api";
 import { toMoneyNumber } from "../../utils/money";
 
-// itemType values the API accepts (sent / compared in English) + their Arabic labels.
-export const ITEM_TYPE_OPTIONS = [
-  { value: "STOCK", label: "مخزني" },
-  { value: "SERVICE", label: "خدمي" },
-];
-
 // Prices and reorderLimit are Decimal(18,4) in the database.
 const DECIMALS = { maxDecimals: 4 };
 

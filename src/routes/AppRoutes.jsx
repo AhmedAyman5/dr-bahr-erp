@@ -10,6 +10,7 @@ import Inventories from "../pages/Inventories/Inventories";
 import ItemUnits from "../pages/ItemUnits/ItemUnits";
 import Login from "../pages/Login/Login";
 import NotFound from "../pages/NotFound/NotFound";
+import ProductStock from "../pages/ProductStock/ProductStock";
 import Products from "../pages/Products/Products";
 import Suppliers from "../pages/Suppliers/Suppliers";
 import ProtectedRoute from "./ProtectedRoute";
@@ -42,6 +43,7 @@ function AppRoutes() {
         <Route path="categories" element={<Categories />} />
         <Route path="units" element={<ItemUnits />} />
         <Route path="products" element={<Products />} />
+        <Route path="stock" element={<ProductStock />} />
         <Route path="customers" element={<Customers />} />
         <Route path="suppliers" element={<Suppliers />} />
       </Route>
