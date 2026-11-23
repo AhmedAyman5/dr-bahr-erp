@@ -7,6 +7,8 @@
 //   >
 //     ...form fields...
 //   </Modal>
+// Closes only with the X button, the cancel button (your footer) or the Escape key.
+// Clicking the dark backdrop does NOT close it, so typed form data is never lost by mistake.
 import { useEffect } from "react";
 import { X } from "lucide-react";
 
@@ -28,10 +30,9 @@ function Modal({ open, title, onClose, children, footer, size = "md" }) {
   const widthClass = size === "lg" ? "max-w-2xl" : size === "sm" ? "max-w-sm" : "max-w-lg";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
       <div
         className={`flex max-h-[90vh] w-full flex-col rounded-lg border border-slate-200 bg-white shadow-lg ${widthClass}`}
-        onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
@@ -40,7 +41,8 @@ function Modal({ open, title, onClose, children, footer, size = "md" }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-lg p-1 text-slate-500 outline-none hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-primary/40"
+            title="إغلاق"
             aria-label="إغلاق"
           >
             <X size={20} />

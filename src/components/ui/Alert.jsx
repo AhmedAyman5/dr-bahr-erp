@@ -18,7 +18,13 @@ function Alert({ type = "error", children, onClose, className = "" }) {
       <Icon size={18} className="mt-0.5 shrink-0" />
       <div className="flex-1">{children}</div>
       {onClose && (
-        <button type="button" onClick={onClose} className="shrink-0 opacity-70 hover:opacity-100" aria-label="إغلاق">
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded-lg opacity-70 outline-none hover:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/40"
+          title="إغلاق"
+          aria-label="إغلاق"
+        >
           <X size={16} />
         </button>
       )}

@@ -13,4 +13,24 @@
   body {
     @apply bg-slate-50 font-sans text-slate-900 antialiased;
   }
+
+  /* Tailwind v4 Preflight sets cursor: default on buttons — show a pointer on everything clickable. */
+  button,
+  [role="button"],
+  a[href],
+  select,
+  input[type="checkbox"],
+  input[type="radio"],
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"]:disabled,
+  select:disabled,
+  input[type="checkbox"]:disabled,
+  input[type="radio"]:disabled {
+    cursor: not-allowed;
+  }
 }

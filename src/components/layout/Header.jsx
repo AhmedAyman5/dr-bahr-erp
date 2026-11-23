@@ -1,12 +1,16 @@
 // Top bar: logged-in username + logout (the only logout button in the app).
+// Logout asks for confirmation first.
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogOut, UserCircle } from "lucide-react";
 import { clearSession, getUser } from "../../services/session";
 import Button from "../ui/Button";
+import ConfirmDialog from "../ui/ConfirmDialog";
 
 function Header() {
   const navigate = useNavigate();
   const user = getUser();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function handleLogout() {
     clearSession();
@@ -20,10 +24,20 @@ function Header() {
         <span className="text-sm font-medium">{user?.username}</span>
       </div>
 
-      <Button variant="ghost" onClick={handleLogout}>
+      <Button variant="danger-ghost" onClick={() => setConfirmOpen(true)}>
         <LogOut size={18} />
         تسجيل الخروج
       </Button>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="تسجيل الخروج"
+        message="هل تريد تسجيل الخروج من النظام؟"
+        confirmLabel="تسجيل الخروج"
+        cancelLabel="إلغاء"
+        onConfirm={handleLogout}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </header>
   );
 }

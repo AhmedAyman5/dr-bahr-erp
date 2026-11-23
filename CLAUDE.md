@@ -22,6 +22,7 @@ Team: Ahmed = frontend, Mazen = backend. Work is delivered in weekly chunks: eac
 npm run dev       # start dev server (http://localhost:5173)
 npm run build     # production build — must pass before a task is done
 npm run lint      # lint
+npm run test:e2e   # browser tests (Playwright) — backend tests need Docker
 ```
 
 Backend (Ahmed runs it, from `../backend`): `docker compose up -d` → API on `http://localhost:3000`. This local Docker backend is the ONLY backend (no production server yet).
@@ -76,6 +77,10 @@ Before building or changing a page, read: every `../backend/doc/FRONTEND_WEEKN_*
 ## 4. Folder structure
 
 ```text
+e2e/                          # browser tests (Playwright, see §10) — project root, next to src/
+├── helpers.js                # shared test helpers (console-error check, fake session)
+└── <name>.spec.js            # one test file per page / feature
+
 src/
 ├── main.jsx                  # BrowserRouter + App
 ├── App.jsx                   # renders <AppRoutes />
@@ -88,7 +93,8 @@ src/
 │
 ├── routes/
 │   ├── AppRoutes.jsx         # all routes in one place
-│   └── ProtectedRoute.jsx    # redirects to /login when there is no session
+│   ├── ProtectedRoute.jsx    # redirects to /login when there is no session
+│   └── PublicOnlyRoute.jsx   # redirects to / when already logged in (login page)
 │
 ├── components/
 │   ├── layout/               # MainLayout, Sidebar, Header, PageHeader
@@ -229,6 +235,7 @@ useEffect(() => {
 - Logout lives in the Header only: `clearSession()` → navigate to `/login`.
 - `/auth/signup` is TEMPORARY on the backend — never build a signup screen.
 - No role-based UI yet. Keep `user.role` stored; do not invent permissions.
+- Route access checks (logged in / logged out) live inside guard components (`ProtectedRoute`, `PublicOnlyRoute`) so they run on every render. Never compute them inline in `AppRoutes` JSX — the value goes stale and can cause redirect loops.
 
 ### Errors — `utils/errors.js`
 
@@ -243,8 +250,8 @@ useEffect(() => {
 
 ### Formatting — `utils/format.js`
 
-- `formatNumber(value)` → handles string numbers from the API, Arabic-friendly output.
-- `formatDate(value)` → readable date (`ar-EG`).
+- `formatNumber(value)` → handles string numbers from the API, Arabic-friendly output with Western digits (`ar-EG-u-nu-latn`, e.g. `1,234.5`).
+- `formatDate(value)` → readable date with Arabic month names and Western digits (`ar-EG-u-nu-latn`, e.g. `21 نوفمبر 2026`).
 
 ---
 
@@ -254,7 +261,7 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 
 | Component                                  | Use                                                                           |
 | ------------------------------------------ | ----------------------------------------------------------------------------- |
-| `Button`                                   | variants: `primary`, `secondary`, `danger`, `ghost`; `loading` prop           |
+| `Button`                                   | variants: `primary`, `secondary`, `danger`, `danger-ghost`, `ghost`; `loading` prop |
 | `Input`, `Select`, `Textarea`              | form controls with `label`, `required`, `error`, `readOnly`                   |
 | `Modal`                                    | dialog shell: title, body, footer actions                                     |
 | `ConfirmDialog`                            | delete confirmations ("هل أنت متأكد من حذف ...؟")                             |
@@ -291,6 +298,18 @@ Rules: pages never import or render `MainLayout`, Sidebar or Header. Add a new s
 
 Use `primary` tokens instead of `blue-600` so the brand color can change in one place. Style: clean, calm, professional ERP — light shadows, `rounded-lg`, no gradients, no heavy animations. Must work on desktop, laptop and tablet.
 
+### Usability rules (users are accountants, not developers)
+
+- Every clickable element shows a pointer cursor (global rule in `index.css`); disabled shows `not-allowed`.
+- Colors have one fixed meaning and are never mixed: blue (`primary`) = main / safe action, red = destructive or leaving (delete, logout), green = success, amber = warning, gray/slate = neutral or cancel. Never use red for a normal action or blue for a destructive one.
+- Every destructive or session-ending action (delete, logout, discarding unsaved changes) asks for confirmation with `ConfirmDialog`; the confirm button is red and names the action (e.g. "حذف الفرع", "تسجيل الخروج"), never a vague "تأكيد" or "نعم".
+- All interactive elements have clear hover and keyboard focus states.
+- Icon-only buttons have an Arabic `title` (tooltip) and `aria-label`, e.g. `title="تعديل"`.
+- Buttons use clear Arabic verbs that say what will happen ("حفظ", "إضافة صنف", "حذف").
+- Modals close only with X / إلغاء / Escape — never by clicking the backdrop.
+- Numbers and dates are shown with Western digits (123).
+- Every action gives visible feedback: loading state while waiting, a success message after, an Arabic error if it fails.
+
 ---
 
 ## 9. Working rules for Claude Code
@@ -307,6 +326,7 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 ### Definition of done (check before saying a task is finished)
 
 - [ ] `npm run build` passes with no errors.
+- [ ] `npm run test:e2e` passes (and new tests were added for new pages / bug fixes).
 - [ ] Loading, error (with retry), empty and data states all work.
 - [ ] Request bodies contain only documented fields; `code` is read-only.
 - [ ] No English text visible in the UI; layout looks right in RTL.
@@ -315,11 +335,24 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 
 ---
 
-## 10. Progress
+## 10. Testing
+
+- A task is NOT done until `npm run build`, `npm run lint` and `npm run test:e2e` all pass.
+- Every new page gets an e2e test file: the page loads with no console errors, the main happy path works (e.g. list → add → edit → delete with confirmation), and the Arabic error / empty states show.
+- Every bug fix gets a regression test that fails before the fix and passes after it.
+- Tests fail on any console error or page error coming from the app.
+- Never weaken, skip or delete a test to make it pass; fix the real cause.
+- Tests that need the backend skip with a clear message when the API is down — tell Ahmed.
+- Do not change `../backend` or its data beyond what a test needs through the API.
+- In the final report, list: tests run, passed, skipped (and why), and any console warnings seen.
+
+---
+
+## 11. Progress
 
 | Week | Backend docs | Frontend pages                                                                                                 | Status |
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
-| 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ⏳     |
+| 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
 | 1    | `doc/week1/` | Branches, Inventories, Categories, Item Units, Products, Product Stock, Customers, Suppliers, Employees, Users | ⏳     |
 | 2    | `doc/week2/` | Purchases / Sales invoices & returns, Quotations                                                               | ⏳     |
 
