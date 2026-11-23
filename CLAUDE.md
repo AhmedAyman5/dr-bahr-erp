@@ -261,17 +261,19 @@ that sets state when it is called from an effect, even when the state is set aft
 ### Formatting — `utils/format.js`
 
 - `formatNumber(value)` → handles string numbers from the API, Arabic-friendly output with Western digits (`ar-EG-u-nu-latn`, e.g. `1,234.5`).
-- `formatMoney(value)` → money columns: always 2 decimals, Western digits, thousands separator, no currency symbol (`"1500"` → `1,500.00`, `"-250.5"` → `-250.50`, empty / invalid → `-`). Use it for **every** money value. In tables render it inside `<span dir="ltr">` so the minus of a negative value stays on the left in RTL.
+- `formatMoney(value, { maxDecimals })` → money columns: always 2 decimals, Western digits, thousands separator, no currency symbol (`"1500"` → `1,500.00`, `"-250.5"` → `-250.50`, empty / invalid → `-`). Use it for **every** money value. In tables render it inside `<span dir="ltr">` so the minus of a negative value stays on the left in RTL.
+  - `maxDecimals` (default `2`) is for `Decimal(18,4)` columns (product prices): at least 2, at most 4 decimals → `formatMoney("15", { maxDecimals: 4 })` = `15.00`, `formatMoney("12.3456", { maxDecimals: 4 })` = `12.3456`.
 - `formatDate(value)` → readable date with Arabic month names and Western digits (`ar-EG-u-nu-latn`, e.g. `21 نوفمبر 2026`).
 
 ### Money inputs — `utils/money.js`
 
-Money columns in the DB are `Decimal(18,2)`. Every money field in a form follows the same rules:
+Money columns in the DB are `Decimal(18,2)` (customers, suppliers) or `Decimal(18,4)` (product prices, `reorderLimit`). Every money field in a form follows the same rules:
 
-- The form keeps the typed text (`useState` string). Add mode starts at `"0"`; edit mode starts with the API string (`"1500.5"`). An empty field means 0.
+- The form keeps the typed text (`useState` string). Add mode starts at `"0"`; edit mode starts with the API string (`"1500.5"`). An empty field means 0. Exception: a **required** money field (product prices) starts empty in add mode and is checked with "السعر مطلوب" before `validateMoney`.
 - Input: `<Input inputMode="decimal" dir="ltr" ... />` (label stays Arabic). Phone, email, tax number and commercial record inputs also get `dir="ltr"`.
-- `validateMoney(text, { min })` in the form's `validate()` → Arabic error or `""`. Checks: a valid number, max 2 decimals, max 16 digits before the point, and `min` when given (mirror the backend: e.g. `{ min: 0 }` for `@Min(0)`, no `min` when negative values are allowed).
-- `toMoneyNumber(text)` in the page's `<page>Api.js` body builder → a number (`""` → `0`). Money is never sent as a string.
+- `validateMoney(text, { min, maxDecimals })` in the form's `validate()` → Arabic error or `""`. Checks: a valid number, max `maxDecimals` decimals (default `2`), max `18 - maxDecimals` digits before the point, and `min` when given (mirror the backend: e.g. `{ min: 0 }` for `@Min(0)`, no `min` when negative values are allowed).
+- `toMoneyNumber(text, { maxDecimals })` in the page's `<page>Api.js` body builder → a number (`""` → `0`), rounded to `maxDecimals` (default `2`). Money is never sent as a string.
+- `Decimal(18,4)` fields pass `{ maxDecimals: 4 }` to all three helpers (see `pages/Products`).
 
 ---
 
@@ -380,7 +382,7 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 | Week | Backend docs | Frontend pages                                                                                                 | Status |
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
-| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers · ⏳ Products, Product Stock, Employees, Users | ⏳     |
+| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products · ⏳ Product Stock, Employees, Users | ⏳     |
 | 2    | `doc/week2/` | Purchases / Sales invoices & returns, Quotations                                                               | ⏳     |
 
 Update this table when a page is finished.

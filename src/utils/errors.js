@@ -38,6 +38,8 @@ const FIELD_AR = {
   retailPrice: "سعر التجزئة",
   wholesalePrice: "سعر الجملة",
   bulkWholesalePrice: "سعر جملة الجملة",
+  reorderLimit: "حد إعادة الطلب",
+  hasExpiryDate: "تاريخ الصلاحية",
   quantity: "الكمية",
   costPrice: "سعر التكلفة",
   hireDate: "تاريخ التعيين",

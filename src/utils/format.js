@@ -29,18 +29,22 @@ export function formatDate(value) {
 
 // formatMoney("1500") → "1,500.00"  |  "-250.5" → "-250.50"  |  empty / invalid → "-"
 // Always 2 decimals, Western digits, no currency symbol.
+// options.maxDecimals (default 2): show up to that many decimals, but never fewer than 2.
+//   formatMoney("15", { maxDecimals: 4 }) → "15.00"  |  formatMoney("12.3456", { maxDecimals: 4 }) → "12.3456"
 // The minus sign is added by hand (the locale would add an invisible direction mark), so in RTL
 // show negative-capable values inside <span dir="ltr"> to keep the minus on the left.
-export function formatMoney(value) {
+export function formatMoney(value, options = {}) {
   if (value === null || value === undefined || String(value).trim() === "") return "-";
 
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
 
-  const rounded = Math.round(number * 100) / 100;
+  const maxDecimals = Math.max(options.maxDecimals ?? 2, 2);
+  const factor = 10 ** maxDecimals;
+  const rounded = Math.round(number * factor) / factor;
   const text = Math.abs(rounded).toLocaleString(LOCALE, {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: maxDecimals,
   });
   return rounded < 0 ? `-${text}` : text;
 }
