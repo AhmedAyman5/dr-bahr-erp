@@ -3,7 +3,9 @@
 import { Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import Branches from "../pages/Branches/Branches";
+import Categories from "../pages/Categories/Categories";
 import Home from "../pages/Home/Home";
+import ItemUnits from "../pages/ItemUnits/ItemUnits";
 import Login from "../pages/Login/Login";
 import NotFound from "../pages/NotFound/NotFound";
 import ProtectedRoute from "./ProtectedRoute";
@@ -32,6 +34,8 @@ function AppRoutes() {
       >
         <Route index element={<Home />} />
         <Route path="branches" element={<Branches />} />
+        <Route path="categories" element={<Categories />} />
+        <Route path="units" element={<ItemUnits />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

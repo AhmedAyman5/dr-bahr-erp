@@ -100,6 +100,39 @@ export async function apiLogin(request, username = "admin", password = "admin123
   return (await response.json()).data;
 }
 
+// Creates a record through the API (e.g. path "/categories") and returns its data.
+export async function createByApi(request, token, path, body) {
+  const response = await request.post(`${API_URL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: body,
+  });
+  expect(response.ok(), `creating test data with POST ${path} failed`).toBeTruthy();
+  return (await response.json()).data;
+}
+
+// Creates a product that uses this category + unit. Name must contain the test tag for cleanup.
+export async function createProductByApi(request, token, { name, categoryId, primaryItemUnitId }) {
+  return createByApi(request, token, "/products", {
+    name,
+    categoryId,
+    primaryItemUnitId,
+    retailPrice: 10,
+    wholesalePrice: 8,
+    bulkWholesalePrice: 7,
+  });
+}
+
+// Cleanup: deletes every record of this list (e.g. "/categories") whose name contains `tag`.
+// Delete products BEFORE their category / unit, or the backend refuses (in use).
+export async function deleteByTag(request, token, path, tag) {
+  const headers = { Authorization: `Bearer ${token}` };
+  const response = await request.get(`${API_URL}${path}`, { headers });
+  const records = (await response.json()).data || [];
+  for (const record of records.filter((r) => r.name.includes(tag))) {
+    await request.delete(`${API_URL}${path}/${record.id}`, { headers });
+  }
+}
+
 // A short random text, so every test works with its own data.
 export function randomTag() {
   return Math.random().toString(36).slice(2, 8);

@@ -1,0 +1,228 @@
+// Item Units (الوحدات) — list page, same structure as pages/Branches.
+import { useEffect, useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import PageHeader from "../../components/layout/PageHeader";
+import Alert from "../../components/ui/Alert";
+import Button from "../../components/ui/Button";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import DataTable from "../../components/ui/DataTable";
+import EmptyState from "../../components/ui/EmptyState";
+import ErrorState from "../../components/ui/ErrorState";
+import LoadingState from "../../components/ui/LoadingState";
+import SearchInput from "../../components/ui/SearchInput";
+import { getErrorMessage } from "../../utils/errors";
+import { formatDate } from "../../utils/format";
+import { deleteItemUnit, getItemUnits } from "./itemUnitsApi";
+import ItemUnitFormModal from "./components/ItemUnitFormModal";
+
+const SUCCESS_HIDE_MS = 4000;
+
+// Shown when DELETE returns BAD_REQUEST: active products still use this unit.
+const IN_USE_MESSAGE =
+  "لا يمكن حذف هذه الوحدة لأنها الوحدة الأساسية لأصناف حالية. غيّر وحدة هذه الأصناف أو احذفها أولاً.";
+
+const COLUMNS = [
+  { key: "code", label: "الكود" },
+  { key: "name", label: "الاسم" },
+  { key: "createdAt", label: "تاريخ الإضافة", render: (row) => formatDate(row.createdAt) },
+];
+
+// Case-insensitive search in name and code.
+function matchesSearch(itemUnit, search) {
+  const text = search.trim().toLowerCase();
+  if (!text) return true;
+  return [itemUnit.name, itemUnit.code].some((value) => (value || "").toLowerCase().includes(text));
+}
+
+function ItemUnits() {
+  // List
+  const [itemUnits, setItemUnits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Messages after an action
+  const [successMessage, setSuccessMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+
+  // Add / edit form: unitToEdit = null → add mode
+  const [formOpen, setFormOpen] = useState(false);
+  const [unitToEdit, setUnitToEdit] = useState(null);
+
+  // Delete
+  const [unitToDelete, setUnitToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Used for the first load, the retry button and after every add / edit / delete.
+  async function loadItemUnits() {
+    setLoading(true);
+    setError("");
+    try {
+      setItemUnits(await getItemUnits());
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadItemUnits();
+  }, []);
+
+  // Hide the success message by itself after a few seconds.
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
+
+  function showSuccess(message) {
+    setActionError("");
+    setSuccessMessage(message);
+  }
+
+  function openAdd() {
+    setUnitToEdit(null);
+    setFormOpen(true);
+  }
+
+  function openEdit(itemUnit) {
+    setUnitToEdit(itemUnit);
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setUnitToEdit(null);
+  }
+
+  function handleSaved(message) {
+    closeForm();
+    showSuccess(message);
+    loadItemUnits();
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteItemUnit(unitToDelete.id);
+      showSuccess("تم حذف الوحدة بنجاح");
+    } catch (err) {
+      setSuccessMessage("");
+      if (err.response?.data?.code === "BAD_REQUEST") {
+        setActionError(IN_USE_MESSAGE);
+      } else {
+        setActionError(getErrorMessage(err));
+      }
+    } finally {
+      setDeleting(false);
+      setUnitToDelete(null);
+    }
+    loadItemUnits();
+  }
+
+  const filteredUnits = itemUnits.filter((itemUnit) => matchesSearch(itemUnit, search));
+
+  function renderContent() {
+    if (loading) return <LoadingState message="جارٍ تحميل الوحدات..." />;
+    if (error) return <ErrorState message={error} onRetry={loadItemUnits} />;
+    if (itemUnits.length === 0) {
+      return (
+        <EmptyState
+          message="لا توجد وحدات بعد"
+          action={
+            <Button onClick={openAdd}>
+              <Plus size={18} />
+              إضافة وحدة
+            </Button>
+          }
+        />
+      );
+    }
+
+    return (
+      <>
+        <div className="mb-4 flex flex-wrap items-center gap-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="ابحث بالاسم أو الكود" />
+          <span className="text-sm text-slate-500">عدد الوحدات: {filteredUnits.length}</span>
+        </div>
+
+        {filteredUnits.length === 0 ? (
+          <EmptyState message="لا توجد نتائج مطابقة للبحث" />
+        ) : (
+          <DataTable
+            columns={COLUMNS}
+            rows={filteredUnits}
+            renderActions={(itemUnit) => (
+              <>
+                <Button
+                  variant="ghost"
+                  className="px-2"
+                  title="تعديل"
+                  aria-label={`تعديل ${itemUnit.name}`}
+                  onClick={() => openEdit(itemUnit)}
+                >
+                  <Pencil size={16} />
+                </Button>
+                <Button
+                  variant="danger-ghost"
+                  className="px-2"
+                  title="حذف"
+                  aria-label={`حذف ${itemUnit.name}`}
+                  onClick={() => setUnitToDelete(itemUnit)}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </>
+            )}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="الوحدات"
+        subtitle="وحدات القياس مثل القطعة والكرتونة والكيلو"
+        action={
+          <Button onClick={openAdd}>
+            <Plus size={18} />
+            إضافة وحدة
+          </Button>
+        }
+      />
+
+      {successMessage && (
+        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+          {successMessage}
+        </Alert>
+      )}
+      {actionError && (
+        <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
+          {actionError}
+        </Alert>
+      )}
+
+      {renderContent()}
+
+      {formOpen && <ItemUnitFormModal itemUnit={unitToEdit} onClose={closeForm} onSaved={handleSaved} />}
+
+      <ConfirmDialog
+        open={Boolean(unitToDelete)}
+        title="حذف الوحدة"
+        message={`هل أنت متأكد من حذف الوحدة "${unitToDelete?.name}"؟`}
+        confirmLabel="حذف الوحدة"
+        onConfirm={handleDelete}
+        onCancel={() => setUnitToDelete(null)}
+        loading={deleting}
+      />
+    </div>
+  );
+}
+
+export default ItemUnits;

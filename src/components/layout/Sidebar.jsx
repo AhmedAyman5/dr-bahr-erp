@@ -3,7 +3,7 @@
 // On tablets (below lg) only the icons are shown: group titles are hidden and a thin
 // divider separates the groups instead.
 import { NavLink } from "react-router-dom";
-import { Building2, House } from "lucide-react";
+import { Building2, House, Ruler, Tags } from "lucide-react";
 import logo from "../../assets/logo.png";
 
 const NAV_GROUPS = [
@@ -13,8 +13,12 @@ const NAV_GROUPS = [
   },
   {
     title: "البيانات الأساسية",
-    // Later: المخازن، التصنيفات، الوحدات
-    items: [{ label: "الفروع", path: "/branches", icon: Building2 }],
+    items: [
+      { label: "الفروع", path: "/branches", icon: Building2 },
+      // Later: المخازن (goes here, between الفروع and التصنيفات)
+      { label: "التصنيفات", path: "/categories", icon: Tags },
+      { label: "الوحدات", path: "/units", icon: Ruler },
+    ],
   },
   {
     title: "الأصناف والمخزون",
