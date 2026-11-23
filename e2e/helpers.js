@@ -59,17 +59,50 @@ export const test = base.extend({
 
 export { expect };
 
-// Creates a logged-in session in localStorage (fake token, no backend needed).
+// Stores a session (token + user) in localStorage, like a real login does.
 // After calling it, navigate to the page you want to test.
-export async function setFakeSession(page, user = FAKE_USER) {
+export async function setSession(page, token, user) {
   await page.goto("/login");
   await page.evaluate(
-    ([tokenKey, userKey, token, userJson]) => {
-      localStorage.setItem(tokenKey, token);
+    ([tokenKey, userKey, tokenValue, userJson]) => {
+      localStorage.setItem(tokenKey, tokenValue);
       localStorage.setItem(userKey, userJson);
     },
-    [TOKEN_KEY, USER_KEY, FAKE_TOKEN, JSON.stringify(user)],
+    [TOKEN_KEY, USER_KEY, token, JSON.stringify(user)],
   );
+}
+
+// Creates a logged-in session with a fake token (no backend needed).
+export async function setFakeSession(page, user = FAKE_USER) {
+  await setSession(page, FAKE_TOKEN, user);
+}
+
+// ---- Real backend (local Docker) ----
+
+export const API_URL = "http://localhost:3000";
+
+// Any HTTP answer (even 401) means the API is up.
+export async function isApiUp(request) {
+  try {
+    await request.get(API_URL, { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const API_DOWN_MESSAGE = `Backend not reachable on ${API_URL} — start it with "docker compose up -d" in ../backend`;
+
+// Logs in through the real API → { access_token, user }.
+export async function apiLogin(request, username = "admin", password = "admin123") {
+  const response = await request.post(`${API_URL}/auth/login`, { data: { username, password } });
+  expect(response.ok(), "API login as admin failed").toBeTruthy();
+  return (await response.json()).data;
+}
+
+// A short random text, so every test works with its own data.
+export function randomTag() {
+  return Math.random().toString(36).slice(2, 8);
 }
 
 export async function getStoredToken(page) {

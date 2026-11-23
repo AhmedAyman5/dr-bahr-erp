@@ -117,7 +117,10 @@ Do not add new top-level folders without asking.
 
 ## 5. Page anatomy (the core rule)
 
-Each page lives in its own folder and is independent from other pages:
+Each page lives in its own folder and is independent from other pages.
+
+**`pages/Branches` is the reference CRUD page.** New list pages copy its structure:
+`<Name>.jsx` (list page) + `<name>Api.js` + `components/<Name>FormModal.jsx` (add + edit in one modal) + `e2e/<name>.spec.js`.
 
 ```text
 pages/Products/
@@ -139,7 +142,7 @@ pages/Products/
 
 - Imports the shared instance: `import api from "../../services/api";`
 - Each function **returns the payload (`response.data.data`)**, so pages never see axios responses.
-- Each function that sends a body **builds it explicitly** from the form values (so unknown fields are never sent, numbers are converted, empty optional values are omitted).
+- Each function that sends a body **builds it explicitly** from the form values (so unknown fields are never sent, numbers are converted). An optional text field the user emptied is sent as `""` so PATCH can clear it.
 - No React state, no UI logic, no `try/catch` (errors bubble up to the page).
 - Dropdown data for this page (e.g. categories for the product form) is fetched by functions in **this** file — small duplication between pages is OK; importing another page's API file is not.
 
@@ -150,7 +153,7 @@ import api from "../../services/api";
 function toBranchBody(form) {
   return {
     name: form.name.trim(),
-    address: form.address.trim() || undefined,
+    address: form.address.trim(), // "" when emptied — undefined would make PATCH keep the old value
   };
 }
 
@@ -194,18 +197,24 @@ async function loadBranches() {
 }
 
 useEffect(() => {
+  // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   loadBranches();
 }, []);
 ```
+
+The `eslint-disable` line is needed: the `react-hooks/set-state-in-effect` rule flags any function
+that sets state when it is called from an effect, even when the state is set after `await`.
 
 ### Adding a new page — checklist
 
 1. Read the module doc(s) in `../backend/doc/`.
 2. Create `pages/<Name>/<Name>.jsx` and `pages/<Name>/<name>Api.js`.
 3. Add the route inside the `MainLayout` group in `routes/AppRoutes.jsx`.
-4. Add the Arabic link to the `NAV_ITEMS` array in `components/layout/Sidebar.jsx`.
+4. Add the Arabic link to the right group in `NAV_GROUPS` (`components/layout/Sidebar.jsx`).
 5. Build the UI with components from `components/ui/`.
-6. Run `npm run build`. Do not touch unrelated pages.
+6. Write `e2e/<page>.spec.js` (see §10).
+7. Run `npm run build`, `npm run lint` and `npm run test:e2e`. Do not touch unrelated pages.
 
 ---
 
@@ -263,7 +272,7 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | ------------------------------------------ | ----------------------------------------------------------------------------- |
 | `Button`                                   | variants: `primary`, `secondary`, `danger`, `danger-ghost`, `ghost`; `loading` prop |
 | `Input`, `Select`, `Textarea`              | form controls with `label`, `required`, `error`, `readOnly`                   |
-| `Modal`                                    | dialog shell: title, body, footer actions                                     |
+| `Modal`                                    | dialog shell: title, body, footer actions; unsaved-changes check (see below)  |
 | `ConfirmDialog`                            | delete confirmations ("هل أنت متأكد من حذف ...؟")                             |
 | `DataTable`                                | simple table: `columns` + `rows` + optional actions column, horizontal scroll |
 | `SearchInput`                              | search box above tables                                                       |
@@ -271,6 +280,13 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `LoadingState`, `ErrorState`, `EmptyState` | the page states (ErrorState has a retry button)                               |
 
 Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title, subtitle, action button slot).
+
+**Unsaved changes in forms** — built into `Modal`, never copy it into a page. Every form modal passes:
+
+- `dirty={isDirty}` → true when the form differs from its starting values. Closing (X / إلغاء / Escape) then first asks "تجاهل التغييرات" ("لديك تغييرات غير محفوظة. هل تريد إغلاق النموذج بدون حفظ؟"). An untouched form closes directly.
+- `cancelLabel="إلغاء"` → Modal renders the cancel button itself, so it gets the same check. Do not put your own cancel button in `footer`.
+- `closeDisabled={saving}` → X / إلغاء / Escape do nothing while a request is running.
+- The submit button lives in `footer` and is linked to the form with `type="submit" form="<form id>"`, so Enter in a field submits too. See `pages/Branches/components/BranchFormModal.jsx`.
 
 Rules: pages never import or render `MainLayout`, Sidebar or Header. Add a new shared component only when a second page needs it; otherwise keep it in the page's `components/` folder.
 

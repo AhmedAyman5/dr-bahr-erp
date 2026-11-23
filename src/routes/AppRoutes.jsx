@@ -1,7 +1,8 @@
 // All routes of the app in one place.
-// New pages go inside the MainLayout group (and get a link in Sidebar NAV_ITEMS).
+// New pages go inside the MainLayout group (and get a link in the right group of Sidebar NAV_GROUPS).
 import { Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
+import Branches from "../pages/Branches/Branches";
 import Home from "../pages/Home/Home";
 import Login from "../pages/Login/Login";
 import NotFound from "../pages/NotFound/NotFound";
@@ -30,6 +31,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<Home />} />
+        <Route path="branches" element={<Branches />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />
