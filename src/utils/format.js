@@ -27,6 +27,23 @@ export function formatDate(value) {
   });
 }
 
+// formatDateTime("2026-11-21T13:05:00.000Z") → date + time in local time, e.g. "21 نوفمبر 2026 في 3:05 م"
+// empty / invalid → "-"
+export function formatDateTime(value) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString(LOCALE, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // formatMoney("1500") → "1,500.00"  |  "-250.5" → "-250.50"  |  empty / invalid → "-"
 // Always 2 decimals, Western digits, no currency symbol.
 // options.maxDecimals (default 2): show up to that many decimals, but never fewer than 2.

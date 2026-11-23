@@ -1,16 +1,20 @@
 // Top bar: logged-in username + logout (the only logout button in the app).
 // Logout asks for confirmation first.
-import { useState } from "react";
+// The username updates right away when the user edits their own account (Users page).
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogOut, UserCircle } from "lucide-react";
-import { clearSession, getUser } from "../../services/session";
+import { clearSession, getUser, onSessionUserChange } from "../../services/session";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
 
 function Header() {
   const navigate = useNavigate();
-  const user = getUser();
+  const [user, setUser] = useState(getUser);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Read the stored user again whenever it changes.
+  useEffect(() => onSessionUserChange(() => setUser(getUser())), []);
 
   function handleLogout() {
     clearSession();

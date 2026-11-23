@@ -32,3 +32,23 @@ export function clearSession() {
 export function isLoggedIn() {
   return Boolean(getToken());
 }
+
+// ---- Keeping the Header in sync ----
+// When the logged-in user edits their own account (Users page), the stored user is updated
+// and every listener (the Header) is told to read it again.
+const USER_CHANGED_EVENT = "drbahr:user-changed";
+
+// changes = e.g. { username: "new.name", role: "SUPERADMIN" }. The token stays the same.
+export function updateSessionUser(changes) {
+  const user = getUser();
+  if (!user) return;
+  localStorage.setItem(USER_KEY, JSON.stringify({ ...user, ...changes }));
+  window.dispatchEvent(new Event(USER_CHANGED_EVENT));
+}
+
+// Calls `callback` every time updateSessionUser runs. Returns a function that stops listening
+// (so it can be returned directly from a useEffect).
+export function onSessionUserChange(callback) {
+  window.addEventListener(USER_CHANGED_EVENT, callback);
+  return () => window.removeEventListener(USER_CHANGED_EVENT, callback);
+}

@@ -383,7 +383,7 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 | Week | Backend docs | Frontend pages                                                                                                 | Status |
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
-| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees · ⏳ Users | ⏳     |
+| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ⏳     |
 | 2    | `doc/week2/` | Purchases / Sales invoices & returns, Quotations                                                               | ⏳     |
 
 Update this table when a page is finished.

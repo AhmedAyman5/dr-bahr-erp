@@ -14,6 +14,7 @@ import NotFound from "../pages/NotFound/NotFound";
 import ProductStock from "../pages/ProductStock/ProductStock";
 import Products from "../pages/Products/Products";
 import Suppliers from "../pages/Suppliers/Suppliers";
+import Users from "../pages/Users/Users";
 import ProtectedRoute from "./ProtectedRoute";
 import PublicOnlyRoute from "./PublicOnlyRoute";
 
@@ -48,6 +49,7 @@ function AppRoutes() {
         <Route path="customers" element={<Customers />} />
         <Route path="suppliers" element={<Suppliers />} />
         <Route path="employees" element={<Employees />} />
+        <Route path="users" element={<Users />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />
