@@ -1,5 +1,5 @@
 // Item Units (الوحدات) — list page, same structure as pages/Branches.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
@@ -10,12 +10,12 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatDate } from "../../utils/format";
 import { deleteItemUnit, getItemUnits } from "./itemUnitsApi";
 import ItemUnitFormModal from "./components/ItemUnitFormModal";
-
-const SUCCESS_HIDE_MS = 4000;
 
 // Shown when DELETE returns BAD_REQUEST: active products still use this unit.
 const IN_USE_MESSAGE =
@@ -35,14 +35,13 @@ function matchesSearch(itemUnit, search) {
 }
 
 function ItemUnits() {
-  // List
-  const [itemUnits, setItemUnits] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List: loaded on mount. reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(getItemUnits);
+  const itemUnits = data ?? [];
   const [search, setSearch] = useState("");
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: unitToEdit = null → add mode
@@ -53,35 +52,9 @@ function ItemUnits() {
   const [unitToDelete, setUnitToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadItemUnits() {
-    setLoading(true);
-    setError("");
-    try {
-      setItemUnits(await getItemUnits());
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadItemUnits();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -102,7 +75,7 @@ function ItemUnits() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadItemUnits();
+    refresh();
   }
 
   async function handleDelete() {
@@ -111,7 +84,7 @@ function ItemUnits() {
       await deleteItemUnit(unitToDelete.id);
       showSuccess("تم حذف الوحدة بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       if (err.response?.data?.code === "BAD_REQUEST") {
         setActionError(IN_USE_MESSAGE);
       } else {
@@ -121,14 +94,14 @@ function ItemUnits() {
       setDeleting(false);
       setUnitToDelete(null);
     }
-    loadItemUnits();
+    refresh();
   }
 
   const filteredUnits = itemUnits.filter((itemUnit) => matchesSearch(itemUnit, search));
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل الوحدات..." />;
-    if (error) return <ErrorState message={error} onRetry={loadItemUnits} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (itemUnits.length === 0) {
       return (
         <EmptyState
@@ -198,13 +171,18 @@ function ItemUnits() {
       />
 
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 

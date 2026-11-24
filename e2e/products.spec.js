@@ -624,6 +624,69 @@ test.describe("mocked API", () => {
     return mockGet(page, path, 200, { message: "fetched successfully", data });
   }
 
+  test.describe("category deleted while the form is open", () => {
+    // The browser logs the 400 answer itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 400/] });
+
+    test("save → DOES_NOT_EXIST: Arabic error, form stays open, the lists refresh silently", async ({ page }) => {
+      const DELETED = { id: "cat2", code: "category-000002", name: "تصنيف محذوف", ...DATES };
+      let categoryDeleted = false; // after the failed save the category list no longer has it
+      await setFakeSession(page);
+      await mockList(page, "/item-unit", [UNIT]);
+      await page.route(apiPath("/categories"), (route) =>
+        route.fulfill({
+          headers: CORS,
+          json: { message: "ok", data: categoryDeleted ? [CATEGORY] : [CATEGORY, DELETED] },
+        }),
+      );
+      await page.route(apiPath("/products"), (route) => {
+        if (route.request().method() === "POST") {
+          categoryDeleted = true;
+          return route.fulfill({
+            status: 400,
+            headers: CORS,
+            json: {
+              statusCode: 400,
+              message: "categoryId does not exist",
+              error: "Bad Request",
+              code: "DOES_NOT_EXIST",
+              field: "categoryId",
+            },
+          });
+        }
+        return route.fulfill({ headers: CORS, json: { message: "ok", data: [PRODUCT] } });
+      });
+      await page.goto("/products");
+      await expect(rowWith(page, "صنف وهمي")).toHaveCount(1);
+
+      await page.getByRole("button", { name: "إضافة صنف" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة صنف" });
+      const categorySelect = dialog.getByLabel("التصنيف");
+      await dialog.getByLabel("الاسم").fill("صنف جديد");
+      await categorySelect.selectOption({ label: "تصنيف محذوف" });
+      await dialog.getByLabel("الوحدة الأساسية").selectOption({ label: "وحدة وهمية" });
+      await dialog.getByLabel("سعر التجزئة").fill("10");
+      await dialog.getByLabel("سعر الجملة").fill("9");
+      await dialog.getByLabel("سعر جملة الجملة").fill("8");
+
+      const listsRefresh = page.waitForRequest(
+        (req) => req.url() === `${API_URL}/categories` && req.method() === "GET",
+      );
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+
+      await expect(dialog.getByRole("alert").filter({ hasText: "التصنيف غير موجود أو محذوف" })).toBeVisible();
+      await expect(dialog).toBeVisible();
+      await listsRefresh;
+      // The deleted category is gone from the Select and the choice is cleared; the rest is kept.
+      await expect(categorySelect.locator("option", { hasText: "تصنيف محذوف" })).toHaveCount(0);
+      await expect(categorySelect).toHaveValue("");
+      await expect(dialog.getByLabel("الاسم")).toHaveValue("صنف جديد");
+      // Silent refresh: the table behind the form never left the screen.
+      await expect(page.getByText("جارٍ تحميل الأصناف...")).toHaveCount(0);
+      await expect(rowWith(page, "صنف وهمي")).toHaveCount(1);
+    });
+  });
+
   test.describe("API error", () => {
     // The browser logs the failed request itself; that is expected here.
     test.use({ allowedConsoleErrors: [/status of 500/] });

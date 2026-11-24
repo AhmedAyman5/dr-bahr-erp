@@ -2,6 +2,7 @@
 // Docs: ../backend/doc/week1/users.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 1.3 roles, PART 4 errors)
 // The API never returns passwords. Passwords are only sent, never logged or stored.
 import api from "../../services/api";
+import { optionalField } from "../../utils/body";
 
 export async function getUsers() {
   const response = await api.get("/users");
@@ -26,26 +27,16 @@ function toUserBody(form, isEdit) {
   const body = {
     username: form.username.trim(),
     role: form.role,
+    // Optional: left out on create when empty; null on edit when emptied (null clears / unlinks).
+    // email / employeeId are UNIQUE, so "" is never sent.
+    email: optionalField(form.email, isEdit),
+    employeeId: optionalField(form.employeeId, isEdit),
+    branchId: optionalField(form.branchId, isEdit),
   };
 
   // Create: always filled (required). Edit: only sent when a new password was typed,
   // otherwise the current password stays. Never trimmed: spaces can be part of a password.
   if (form.password) body.password = form.password;
-
-  // Optional fields. email / employeeId are UNIQUE and email is validated by the backend,
-  // so "" is never sent: create → left out when empty, edit → null clears the saved value.
-  const optional = {
-    email: form.email.trim(),
-    employeeId: form.employeeId,
-    branchId: form.branchId,
-  };
-  for (const [key, value] of Object.entries(optional)) {
-    if (value) {
-      body[key] = value;
-    } else if (isEdit) {
-      body[key] = null;
-    }
-  }
 
   return body;
 }
@@ -55,8 +46,15 @@ export async function createUser(form) {
   return response.data.data;
 }
 
-export async function updateUser(id, form) {
-  const response = await api.patch(`/users/${id}`, toUserBody(form, true));
+// The employee / branch links are sent ONLY when they were changed in the form (initialForm =
+// the form's starting values). A linked employee deleted later would otherwise be sent again
+// and rejected (400 DOES_NOT_EXIST), so such a user could never be saved unchanged.
+export async function updateUser(id, form, initialForm) {
+  const body = toUserBody(form, true);
+  if (form.employeeId === initialForm.employeeId) delete body.employeeId;
+  if (form.branchId === initialForm.branchId) delete body.branchId;
+
+  const response = await api.patch(`/users/${id}`, body);
   return response.data.data;
 }
 

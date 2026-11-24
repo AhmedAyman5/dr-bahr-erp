@@ -1,8 +1,9 @@
 // Customers (العملاء) — list + add / edit / delete. Same structure as pages/Branches.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
+import BalanceCell from "../../components/ui/BalanceCell";
 import Button from "../../components/ui/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import DataTable from "../../components/ui/DataTable";
@@ -10,14 +11,15 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatMoney } from "../../utils/format";
 import { deleteCustomer, getCustomers } from "./customersApi";
 import CustomerFormModal from "./components/CustomerFormModal";
 
-const SUCCESS_HIDE_MS = 4000;
-
-// dir="ltr" keeps numbers (and the minus of negative money) the right way round in RTL.
+// dir="ltr" keeps numbers the right way round in RTL.
+// The opening balance shows the amount + "مدين" / "دائن" and its meaning (see BalanceCell).
 const COLUMNS = [
   { key: "code", label: "الكود" },
   { key: "name", label: "الاسم" },
@@ -30,7 +32,7 @@ const COLUMNS = [
   {
     key: "openingBalance",
     label: "الرصيد الافتتاحي",
-    render: (row) => <span dir="ltr">{formatMoney(row.openingBalance)}</span>,
+    render: (row) => <BalanceCell value={row.openingBalance} party="customer" />,
   },
 ];
 
@@ -44,14 +46,13 @@ function matchesSearch(customer, search) {
 }
 
 function Customers() {
-  // List
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List: loaded on mount. reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(getCustomers);
+  const customers = data ?? [];
   const [search, setSearch] = useState("");
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: customerToEdit = null → add mode
@@ -62,35 +63,9 @@ function Customers() {
   const [customerToDelete, setCustomerToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadCustomers() {
-    setLoading(true);
-    setError("");
-    try {
-      setCustomers(await getCustomers());
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadCustomers();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -111,7 +86,7 @@ function Customers() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadCustomers();
+    refresh();
   }
 
   async function handleDelete() {
@@ -120,20 +95,20 @@ function Customers() {
       await deleteCustomer(customerToDelete.id);
       showSuccess("تم حذف العميل بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setCustomerToDelete(null);
     }
-    loadCustomers();
+    refresh();
   }
 
   const filteredCustomers = customers.filter((customer) => matchesSearch(customer, search));
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل العملاء..." />;
-    if (error) return <ErrorState message={error} onRetry={loadCustomers} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (customers.length === 0) {
       return (
         <EmptyState
@@ -207,13 +182,18 @@ function Customers() {
       />
 
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 

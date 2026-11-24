@@ -4,6 +4,7 @@
 //   customer = null → add mode, customer = object → edit mode.
 import { useState } from "react";
 import Alert from "../../../components/ui/Alert";
+import BalancePreview from "../../../components/ui/BalancePreview";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Modal from "../../../components/ui/Modal";
@@ -136,15 +137,19 @@ function CustomerFormModal({ customer, onClose, onSaved }) {
           onChange={handleChange}
           error={fieldErrors.creditLimit}
         />
-        <Input
-          label="الرصيد الافتتاحي"
-          name="openingBalance"
-          inputMode="decimal"
-          dir="ltr"
-          value={form.openingBalance}
-          onChange={handleChange}
-          error={fieldErrors.openingBalance}
-        />
+        <div>
+          <Input
+            label="الرصيد الافتتاحي"
+            name="openingBalance"
+            inputMode="decimal"
+            dir="ltr"
+            value={form.openingBalance}
+            onChange={handleChange}
+            error={fieldErrors.openingBalance}
+          />
+          {/* Hint + live preview: "سيتم تسجيله: 250.50 دائن — للعميل علينا" */}
+          <BalancePreview value={form.openingBalance} party="customer" />
+        </div>
       </form>
     </Modal>
   );

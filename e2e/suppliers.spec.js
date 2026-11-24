@@ -14,6 +14,7 @@ import {
   apiLogin,
   createByApi,
   deleteByTag,
+  expectBalanceCell,
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
@@ -115,12 +116,12 @@ test.describe("with backend", () => {
     await expect(cells.nth(COL.contactPerson)).toHaveText("أحمد محمد");
     await expect(cells.nth(COL.phone)).toHaveText("01001234567");
     await expect(cells.nth(COL.email)).toHaveText(email);
-    await expect(cells.nth(COL.openingBalance)).toHaveText("1,500.00");
+    await expectBalanceCell(cells.nth(COL.openingBalance), "1,500.00", "دائن", "علينا للمورد");
 
     await expect(success).toBeHidden({ timeout: 7000 });
   });
 
-  test("empty email is left out on create; empty money is sent as 0", async ({ page }) => {
+  test("empty optional fields are left out on create; empty money is sent as 0", async ({ page }) => {
     const name = `مورد بدون بريد ${tag}`;
     await page.goto("/suppliers");
     await page.getByRole("button", { name: "إضافة مورد" }).first().click();
@@ -134,17 +135,17 @@ test.describe("with backend", () => {
     );
     await dialog.getByRole("button", { name: "حفظ" }).click();
     const body = (await requestPromise).postDataJSON();
-    expect(body).not.toHaveProperty("email");
-    expect(body.openingBalance).toBe(0);
+    expect(body).toEqual({ name, openingBalance: 0 });
 
     await expect(page.getByRole("alert").filter({ hasText: "تمت إضافة المورد بنجاح" })).toBeVisible();
     const cells = rowWith(page, name).getByRole("cell");
     await expect(cells.nth(COL.email)).toHaveText("-");
     await expect(cells.nth(COL.contactPerson)).toHaveText("-");
-    await expect(cells.nth(COL.openingBalance)).toHaveText("0.00");
+    // 0 → the amount only, no مدين / دائن badge.
+    await expectBalanceCell(cells.nth(COL.openingBalance), "0.00");
   });
 
-  test("validation: name, invalid email, 3 decimals and -1 show Arabic errors and send no request", async ({
+  test("validation: name, invalid email and 3 decimals show Arabic errors and send no request", async ({
     page,
   }) => {
     const sent = recordWrites(page);
@@ -162,17 +163,71 @@ test.describe("with backend", () => {
     await expect(dialog.getByText("البريد الإلكتروني غير صحيح")).toBeVisible();
     await dialog.getByLabel("البريد الإلكتروني").fill("");
 
-    await dialog.getByLabel("الرصيد الافتتاحي").fill("10.999");
+    await dialog.getByLabel("الرصيد الافتتاحي").fill("-10.999");
     await save.click();
     await expect(dialog.getByText("الحد الأقصى رقمان بعد العلامة العشرية")).toBeVisible();
-
-    // Supplier opening balance cannot be negative.
-    await dialog.getByLabel("الرصيد الافتتاحي").fill("-1");
-    await save.click();
-    await expect(dialog.getByText("القيمة يجب ألا تقل عن 0")).toBeVisible();
+    // A negative opening balance is allowed now (UPDATE_3): no minimum error.
+    await expect(dialog.getByText("القيمة يجب ألا تقل عن 0")).toHaveCount(0);
 
     await expect(dialog).toBeVisible();
     expect(sent).toEqual([]);
+  });
+
+  test("opening balance −500 is accepted → 500.00 مدين (لنا عند المورد); +500 → دائن (علينا للمورد)", async ({
+    page,
+  }) => {
+    const cases = [
+      { typed: "-500", sent: -500, label: "مدين", meaning: "لنا عند المورد" },
+      { typed: "500", sent: 500, label: "دائن", meaning: "علينا للمورد" },
+    ];
+    await page.goto("/suppliers");
+
+    for (const [index, item] of cases.entries()) {
+      const name = `مورد رصيد ${index} ${tag}`;
+      await page.getByRole("button", { name: "إضافة مورد" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة مورد" });
+      await dialog.getByLabel("الاسم").fill(name);
+      await dialog.getByLabel("الرصيد الافتتاحي").fill(item.typed);
+      await expect(dialog.getByText(`سيتم تسجيله: 500.00 ${item.label} — ${item.meaning}`)).toBeVisible();
+
+      const requestPromise = page.waitForRequest(
+        (req) => req.url() === `${API_URL}/supplier` && req.method() === "POST",
+      );
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      expect((await requestPromise).postDataJSON().openingBalance).toBe(item.sent);
+
+      // Accepted by the backend (it was a 400 before UPDATE_3 for −500).
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole("alert").filter({ hasText: "تمت إضافة المورد بنجاح" })).toBeVisible();
+      const cell = rowWith(page, name).getByRole("cell").nth(COL.openingBalance);
+      await expectBalanceCell(cell, "500.00", item.label, item.meaning);
+    }
+  });
+
+  test("form: the opening balance preview updates while typing and hides for 0, empty and invalid", async ({
+    page,
+  }) => {
+    await page.goto("/suppliers");
+    await page.getByRole("button", { name: "إضافة مورد" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "إضافة مورد" });
+    const balance = dialog.getByLabel("الرصيد الافتتاحي");
+    const preview = dialog.getByText("سيتم تسجيله:");
+
+    await expect(
+      dialog.getByText("اكتب الرقم موجب لو علينا فلوس للمورد، وسالب لو المورد عليه فلوس لنا"),
+    ).toBeVisible();
+    await expect(preview).toHaveCount(0);
+
+    await balance.fill("");
+    await balance.pressSequentially("-75.2");
+    await expect(preview).toHaveText("سيتم تسجيله: 75.20 مدين — لنا عند المورد");
+    await balance.fill("2500.5");
+    await expect(preview).toHaveText("سيتم تسجيله: 2,500.50 دائن — علينا للمورد");
+
+    for (const value of ["0", "", "-", "1.234"]) {
+      await balance.fill(value);
+      await expect(preview).toHaveCount(0);
+    }
   });
 
   test("search finds a supplier by name, code, phone, contact person and email", async ({ page, request }) => {
@@ -203,11 +258,16 @@ test.describe("with backend", () => {
     await expect(page.getByText("عدد الموردين: 0")).toBeVisible();
   });
 
-  test('edit: clearing phone sends "" and email sends null → both show "-"', async ({ page, request }) => {
+  test('edit: emptying contact person, phone, email and tax number sends null → "-" and cleared', async ({
+    page,
+    request,
+  }) => {
     const supplier = await createByApi(request, token, "/supplier", {
       name: `مورد قديم ${tag}`,
+      contactPerson: "أحمد",
       phone: "01001234567",
       email: `old.${tag}@example.com`,
+      taxNumber: "123-456-789",
       openingBalance: 1500,
     });
     const newName = `مورد معدل ${tag}`;
@@ -224,8 +284,9 @@ test.describe("with backend", () => {
     await expect(dialog.getByLabel("الرصيد الافتتاحي")).toHaveValue("1500");
 
     await dialog.getByLabel("الاسم").fill(newName);
-    await dialog.getByLabel("الهاتف").fill("");
-    await dialog.getByLabel("البريد الإلكتروني").fill("");
+    for (const label of ["الشخص المسؤول", "الهاتف", "البريد الإلكتروني", "الرقم الضريبي"]) {
+      await dialog.getByLabel(label).fill("");
+    }
     await dialog.getByLabel("الرصيد الافتتاحي").fill("99.9");
 
     const requestPromise = page.waitForRequest(
@@ -233,10 +294,14 @@ test.describe("with backend", () => {
     );
     await dialog.getByRole("button", { name: "حفظ" }).click();
     const body = (await requestPromise).postDataJSON();
-    expect(body.phone).toBe("");
-    expect(body.email).toBeNull();
-    expect(body.openingBalance).toBe(99.9);
-    expect(body).not.toHaveProperty("code");
+    expect(body).toEqual({
+      name: newName,
+      contactPerson: null,
+      phone: null,
+      email: null,
+      taxNumber: null,
+      openingBalance: 99.9,
+    });
 
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل المورد بنجاح" })).toBeVisible();
@@ -244,13 +309,19 @@ test.describe("with backend", () => {
     await expect(cells.nth(COL.code)).toHaveText(supplier.code);
     await expect(cells.nth(COL.phone)).toHaveText("-");
     await expect(cells.nth(COL.email)).toHaveText("-");
-    await expect(cells.nth(COL.openingBalance)).toHaveText("99.90");
+    await expect(cells.nth(COL.contactPerson)).toHaveText("-");
+    await expectBalanceCell(cells.nth(COL.openingBalance), "99.90", "دائن", "علينا للمورد");
 
-    // The API agrees: the email is really cleared.
+    // The API agrees: the four fields are really cleared (null, not "").
     const response = await request.get(`${API_URL}/supplier/${supplier.id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect((await response.json()).data.email).toBeNull();
+    expect((await response.json()).data).toMatchObject({
+      contactPerson: null,
+      phone: null,
+      email: null,
+      taxNumber: null,
+    });
   });
 
   test("edit: an invalid email shows an Arabic error and sends no request", async ({ page, request }) => {
@@ -395,7 +466,7 @@ test.describe("mocked API", () => {
       await expect(cells.nth(COL.code)).toHaveText("SUP-000001");
       await expect(cells.nth(COL.contactPerson)).toHaveText("-");
       await expect(cells.nth(COL.email)).toHaveText("-");
-      await expect(cells.nth(COL.openingBalance)).toHaveText("1,234,567.50");
+      await expectBalanceCell(cells.nth(COL.openingBalance), "1,234,567.50", "دائن", "علينا للمورد");
       await expect(page.getByText("عدد الموردين: 1")).toBeVisible();
     });
   });

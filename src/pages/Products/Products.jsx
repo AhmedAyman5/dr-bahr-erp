@@ -1,7 +1,7 @@
 // Products (الأصناف) — list page, same structure as pages/Branches.
 // Every product needs a category and a unit, so those lists are loaded together with the products
 // (for the category filter, the form Selects and the "add these first" hint).
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
@@ -14,13 +14,13 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatMoney } from "../../utils/format";
 import { ITEM_TYPES, getLabel } from "../../utils/labels";
 import { deleteProduct, getCategories, getItemUnits, getProducts } from "./productsApi";
 import ProductFormModal from "./components/ProductFormModal";
-
-const SUCCESS_HIDE_MS = 4000;
 
 // Prices are Decimal(18,4): show at least 2 and at most 4 decimals ("15" → "15.00").
 function renderPrice(value) {
@@ -62,21 +62,27 @@ function matchesSearch(product, search) {
   );
 }
 
+// The products, categories and units (for the filter and the form), loaded together.
+async function loadPageData() {
+  const [products, categories, units] = await Promise.all([getProducts(), getCategories(), getItemUnits()]);
+  return { products, categories, units };
+}
+
 function Products() {
-  // List (+ categories and units for the filter and the form)
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [units, setUnits] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List (+ categories and units for the filter and the form): loaded on mount.
+  // reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(loadPageData);
+  const products = data?.products ?? [];
+  const categories = data?.categories ?? [];
+  const units = data?.units ?? [];
 
   // Filters ("" = all)
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: productToEdit = null → add mode
@@ -87,42 +93,9 @@ function Products() {
   const [productToDelete, setProductToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadData() {
-    setLoading(true);
-    setError("");
-    try {
-      const [productsData, categoriesData, unitsData] = await Promise.all([
-        getProducts(),
-        getCategories(),
-        getItemUnits(),
-      ]);
-      setProducts(productsData);
-      setCategories(categoriesData);
-      setUnits(unitsData);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -143,7 +116,7 @@ function Products() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadData();
+    refresh();
   }
 
   async function handleDelete() {
@@ -152,13 +125,13 @@ function Products() {
       await deleteProduct(productToDelete.id);
       showSuccess("تم حذف الصنف بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setProductToDelete(null);
     }
-    loadData();
+    refresh();
   }
 
   // A product needs a category and a unit: without them adding is not possible.
@@ -194,7 +167,7 @@ function Products() {
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل الأصناف..." />;
-    if (error) return <ErrorState message={error} onRetry={loadData} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (products.length === 0) {
       return <EmptyState message="لا توجد أصناف بعد" action={renderAddButton()} />;
     }
@@ -280,13 +253,18 @@ function Products() {
         </Alert>
       )}
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 
@@ -299,6 +277,7 @@ function Products() {
           units={units}
           onClose={closeForm}
           onSaved={handleSaved}
+          onRefreshLists={refresh}
         />
       )}
 

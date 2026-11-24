@@ -2,7 +2,7 @@
 // Same structure as pages/Branches, plus a warehouse Select at the top.
 // The selected warehouse lives in the URL (?inventory=<id>), so a refresh keeps it.
 // No totals / stock value here: calculations belong to the backend.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
@@ -15,12 +15,12 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatMoney } from "../../utils/format";
 import { getBranches, getInventories, getProducts, getStock, removeStock } from "./productStockApi";
 import StockFormModal from "./components/StockFormModal";
-
-const SUCCESS_HIDE_MS = 4000;
 
 // Quantity and cost are Decimal(18,4): at least 2, at most 4 decimals.
 function renderNumber(value) {
@@ -63,28 +63,50 @@ function matchesSearch(record, search) {
   return [name, code, barcode].some((value) => (value || "").toLowerCase().includes(text));
 }
 
+// Warehouses (+ branches for their labels) and products (for the add form), loaded together.
+async function loadBaseData() {
+  const [inventories, branches, products] = await Promise.all([getInventories(), getBranches(), getProducts()]);
+  return { inventories, branches, products };
+}
+
 function ProductStock() {
   // Selected warehouse id from the URL ("" = none).
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get("inventory") || "";
 
-  // Base data: warehouses (+ branches for their labels) and products (for the add form).
-  const [inventories, setInventories] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // Base data, loaded on mount. reload = retry, refreshBase = silent (a chosen product was deleted meanwhile).
+  const {
+    data: baseData,
+    loading,
+    error,
+    refreshError: baseRefreshError,
+    reload,
+    refresh: refreshBase,
+  } = useLoadData(loadBaseData);
+  const inventories = baseData?.inventories ?? [];
+  const branches = baseData?.branches ?? [];
+  const products = baseData?.products ?? [];
 
-  // Stock of the selected warehouse.
-  const [stock, setStock] = useState([]);
-  const [stockLoading, setStockLoading] = useState(false);
-  const [stockError, setStockError] = useState("");
+  // Only a warehouse that exists in the list is loaded (an old id in the URL is never requested).
+  const selectedInventory = inventories.find((inventory) => inventory.id === selectedId);
+  const activeId = selectedInventory?.id ?? "";
+
+  // Stock of the selected warehouse: loaded again whenever another warehouse is selected.
+  // An answer for a previous warehouse (fast switching) is ignored by the hook.
+  // refreshStock = silent, after every add / edit / remove.
+  const {
+    data: stockData,
+    loading: stockLoading,
+    error: stockError,
+    refreshError: stockRefreshError,
+    reload: reloadStock,
+    refresh: refreshStock,
+  } = useLoadData(async () => (activeId ? getStock(activeId) : []), [activeId]);
+  const stock = stockData ?? [];
   const [search, setSearch] = useState("");
-  // Number of the latest stock request: an older answer (previous warehouse) is ignored.
-  const latestStockRequest = useRef(0);
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: recordToEdit = null → add mode
@@ -100,80 +122,17 @@ function ProductStock() {
     setSearchParams(id ? { inventory: id } : {});
   }
 
-  // First load + retry.
-  async function loadBaseData() {
-    setLoading(true);
-    setError("");
-    try {
-      const [inventoriesData, branchesData, productsData] = await Promise.all([
-        getInventories(),
-        getBranches(),
-        getProducts(),
-      ]);
-      setInventories(inventoriesData);
-      setBranches(branchesData);
-      setProducts(productsData);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Stock of one warehouse: after choosing it, retry, and every add / edit / remove.
-  async function loadStock(inventoryId) {
-    latestStockRequest.current += 1;
-    const requestNumber = latestStockRequest.current;
-    setStockLoading(true);
-    setStockError("");
-    setStock([]);
-    try {
-      const data = await getStock(inventoryId);
-      if (requestNumber === latestStockRequest.current) setStock(data);
-    } catch (err) {
-      if (requestNumber === latestStockRequest.current) setStockError(getErrorMessage(err));
-    } finally {
-      if (requestNumber === latestStockRequest.current) setStockLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadBaseData();
-  }, []);
-
-  // Only a warehouse that exists in the list is loaded (an old id in the URL is never requested).
-  const selectedInventory = inventories.find((inventory) => inventory.id === selectedId);
-  const activeId = selectedInventory?.id ?? "";
-
   // Keep the URL valid once the warehouses are known: an id that no longer exists is cleared,
   // and when there is exactly one warehouse it is selected automatically.
+  const autoId = inventories.length === 1 ? inventories[0].id : "";
+  const fixUrl = !loading && !error && !selectedInventory && autoId !== selectedId;
   useEffect(() => {
-    if (loading || error || selectedInventory) return;
-    const autoId = inventories.length === 1 ? inventories[0].id : "";
-    if (autoId !== selectedId) {
-      setSearchParams(autoId ? { inventory: autoId } : {}, { replace: true });
-    }
-  }, [loading, error, inventories, selectedInventory, selectedId, setSearchParams]);
-
-  useEffect(() => {
-    if (!activeId) return;
-    // Same as above: load the stock whenever another (existing) warehouse is selected.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadStock(activeId);
-  }, [activeId]);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
+    if (fixUrl) setSearchParams(autoId ? { inventory: autoId } : {}, { replace: true });
+  }, [fixUrl, autoId, setSearchParams]);
 
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -194,7 +153,7 @@ function ProductStock() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadStock(activeId);
+    refreshStock();
   }
 
   async function handleRemove() {
@@ -203,13 +162,13 @@ function ProductStock() {
       await removeStock(recordToRemove.id);
       showSuccess("تمت إزالة الصنف من المخزن بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setRemoving(false);
       setRecordToRemove(null);
     }
-    loadStock(activeId);
+    refreshStock();
   }
 
   // "<warehouse> — <branch>" for the Select and the forms.
@@ -246,7 +205,7 @@ function ProductStock() {
   function renderStock() {
     if (!activeId) return <EmptyState message="اختر مخزناً لعرض أرصدته" />;
     if (stockLoading) return <LoadingState message="جارٍ تحميل أرصدة المخزن..." />;
-    if (stockError) return <ErrorState message={stockError} onRetry={() => loadStock(activeId)} />;
+    if (stockError) return <ErrorState message={stockError} onRetry={reloadStock} />;
     if (stock.length === 0) {
       return <EmptyState message="لا توجد أصناف في هذا المخزن بعد" action={renderAddButton()} />;
     }
@@ -294,7 +253,7 @@ function ProductStock() {
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل المخازن..." />;
-    if (error) return <ErrorState message={error} onRetry={loadBaseData} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (noInventories) return null; // the hint above explains what to do
 
     return (
@@ -325,13 +284,18 @@ function ProductStock() {
         </Alert>
       )}
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {(baseRefreshError || stockRefreshError) && (
+        <Alert type="error" className="mb-4">
+          {baseRefreshError || stockRefreshError}
         </Alert>
       )}
 
@@ -346,6 +310,7 @@ function ProductStock() {
           hasStockProducts={stockProducts.length > 0}
           onClose={closeForm}
           onSaved={handleSaved}
+          onRefreshLists={refreshBase}
         />
       )}
 

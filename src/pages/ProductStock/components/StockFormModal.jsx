@@ -2,10 +2,12 @@
 // Usage (render it only while open, so the form starts fresh every time):
 //   {formOpen && (
 //     <StockFormModal record={recordToEdit} inventoryId={activeId} inventoryLabel="مخزن 1 — فرع 1"
-//       availableProducts={availableProducts} hasStockProducts={true} onClose={closeForm} onSaved={handleSaved} />
+//       availableProducts={availableProducts} hasStockProducts={true} onClose={closeForm} onSaved={handleSaved}
+//       onRefreshLists={refreshBase} />
 //   )}
 //   record = null → add mode, record = stock record (with product) → edit mode.
 //   availableProducts: STOCK products that are not in this warehouse yet (add mode only).
+//   onRefreshLists() reloads the product list silently (called when the chosen product was deleted).
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import Alert from "../../../components/ui/Alert";
@@ -35,7 +37,16 @@ function getInitialForm(record) {
   };
 }
 
-function StockFormModal({ record, inventoryId, inventoryLabel, availableProducts, hasStockProducts, onClose, onSaved }) {
+function StockFormModal({
+  record,
+  inventoryId,
+  inventoryLabel,
+  availableProducts,
+  hasStockProducts,
+  onClose,
+  onSaved,
+  onRefreshLists,
+}) {
   const isEdit = Boolean(record);
   const initialForm = getInitialForm(record);
 
@@ -89,6 +100,13 @@ function StockFormModal({ record, inventoryId, inventoryLabel, availableProducts
     } catch (err) {
       // Keep the typed data so the user can fix it and try again.
       setError(getErrorMessage(err));
+      // The chosen product was deleted meanwhile (400 DOES_NOT_EXIST): clear the choice and reload
+      // the products, so the deleted one disappears from the Select.
+      const { code, field } = err.response?.data || {};
+      if (code === "DOES_NOT_EXIST" && field === "productId") {
+        setForm({ ...form, productId: "" });
+        onRefreshLists();
+      }
       setSaving(false);
     }
   }

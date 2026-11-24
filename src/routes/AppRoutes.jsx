@@ -1,5 +1,6 @@
 // All routes of the app in one place.
-// New pages go inside the MainLayout group (and get a link in the right group of Sidebar NAV_GROUPS).
+// New pages go inside the RoleRoute group (and get a link in the right group of Sidebar NAV_GROUPS).
+// Which role may open which page: rolePages.js.
 import { Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import Branches from "../pages/Branches/Branches";
@@ -17,6 +18,7 @@ import Suppliers from "../pages/Suppliers/Suppliers";
 import Users from "../pages/Users/Users";
 import ProtectedRoute from "./ProtectedRoute";
 import PublicOnlyRoute from "./PublicOnlyRoute";
+import RoleRoute from "./RoleRoute";
 
 function AppRoutes() {
   return (
@@ -39,17 +41,20 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Home />} />
-        <Route path="branches" element={<Branches />} />
-        <Route path="inventories" element={<Inventories />} />
-        <Route path="categories" element={<Categories />} />
-        <Route path="units" element={<ItemUnits />} />
-        <Route path="products" element={<Products />} />
-        <Route path="stock" element={<ProductStock />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="suppliers" element={<Suppliers />} />
-        <Route path="employees" element={<Employees />} />
-        <Route path="users" element={<Users />} />
+        {/* A page the role may not open shows "ليس لديك صلاحية" instead */}
+        <Route element={<RoleRoute />}>
+          <Route index element={<Home />} />
+          <Route path="branches" element={<Branches />} />
+          <Route path="inventories" element={<Inventories />} />
+          <Route path="categories" element={<Categories />} />
+          <Route path="units" element={<ItemUnits />} />
+          <Route path="products" element={<Products />} />
+          <Route path="stock" element={<ProductStock />} />
+          <Route path="customers" element={<Customers />} />
+          <Route path="suppliers" element={<Suppliers />} />
+          <Route path="employees" element={<Employees />} />
+          <Route path="users" element={<Users />} />
+        </Route>
       </Route>
 
       <Route path="*" element={<NotFound />} />

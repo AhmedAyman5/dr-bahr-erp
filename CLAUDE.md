@@ -40,6 +40,7 @@ dr-bahr/
 │   └── doc/
 │       ├── FRONTEND_WEEK1_READ_FIRST.txt
 │       ├── FRONTEND_WEEK1_UPDATE_2.txt   ← read after READ_FIRST (renames, enums, error codes)
+│       ├── FRONTEND_WEEK1_UPDATE_3.txt   ← read after UPDATE_2 (null clears, balances, DOES_NOT_EXIST, roles)
 │       ├── week1/00-overview.txt   ← general rules + error shapes
 │       ├── week1/<module>.txt      ← exact endpoints and bodies
 │       └── week2/ ... week6/
@@ -68,6 +69,14 @@ Before building or changing a page, read: every `../backend/doc/FRONTEND_WEEKN_*
 4. Money / quantity values are **sent as numbers** but **returned as strings** (`"12.5"`). Convert with `Number(...)` before sending or calculating; display with `formatNumber`.
 5. Delete is always a soft delete. Deleted records disappear from lists and get-by-id returns 404.
 6. `PATCH` is partial — send only the editable fields.
+   **Emptied optional fields** (UPDATE_3 PART 5): on PATCH an optional field the user emptied is sent as **`null`**
+   (null clears it; `""` is never sent). On create an empty optional field is **left out**. Never send `null` for a
+   required field or a money / number field (send `0`) → 400. Use `optionalField(value, isEdit)` from `utils/body.js`.
+   The nullable fields: branch `address` · customer `taxNumber`, `commercialRecord`, `phone`, `address` · supplier
+   `taxNumber`, `contactPerson`, `phone`, `email` · employee `nationalId`, `jobTitle`, `hireDate` · product `barcode` ·
+   user `email`, `employeeId`, `branchId`.
+   Exception — user links: on PATCH `employeeId` / `branchId` are sent **only when changed in the form**, so a user
+   whose linked employee was deleted later can still be saved (the deleted id is never sent back → no 400).
 7. Only SUPERADMIN can call the API for now (others get 403).
 8. Enum fields (e.g. product `itemType`: `STOCK` / `SERVICE`) are **sent and compared as the English value** and **displayed with the Arabic label** from the docs.
 9. Every error body is `{ statusCode, message, error, code, field }`. `code` is stable; `message` may change. Translate errors with `code` + `field`, never by parsing `message`.
@@ -94,22 +103,30 @@ src/
 ├── routes/
 │   ├── AppRoutes.jsx         # all routes in one place
 │   ├── ProtectedRoute.jsx    # redirects to /login when there is no session
-│   └── PublicOnlyRoute.jsx   # redirects to / when already logged in (login page)
+│   ├── PublicOnlyRoute.jsx   # redirects to / when already logged in (login page)
+│   ├── RoleRoute.jsx         # shows "ليس لديك صلاحية" when the role may not open the page
+│   └── rolePages.js          # ROLE_PAGES (role → allowed pages) + canAccess(role, path)
 │
 ├── components/
 │   ├── layout/               # MainLayout, Sidebar, Header, PageHeader
 │   └── ui/                   # shared UI kit (see §7) — reuse, don't re-create
 │
+├── hooks/                    # shared hooks used by the list pages (see §5)
+│   ├── useLoadData.js        # load / reload / silent refresh of a page's data
+│   └── useAutoHideMessage.js # success message that hides by itself
+│
 ├── utils/
+│   ├── body.js               # optionalField (request bodies: create → left out, edit → null)
 │   ├── errors.js             # getErrorMessage(error) → Arabic message
 │   ├── format.js             # formatNumber, formatMoney, formatDate
-│   ├── labels.js             # enum values + Arabic labels shared by pages (ITEM_TYPES, ...)
+│   ├── labels.js             # enum values + Arabic labels (ITEM_TYPES, ROLES, getBalanceSide, ...)
 │   └── money.js              # validateMoney, toMoneyNumber (money inputs in forms)
 │
 └── pages/                    # one folder per page (see §5)
     ├── Login/
     ├── Branches/
     ├── NotFound/
+    ├── NoPermission/         # shown by RoleRoute
     └── ...
 ```
 
@@ -122,7 +139,8 @@ Do not add new top-level folders without asking.
 Each page lives in its own folder and is independent from other pages.
 
 **`pages/Branches` is the reference CRUD page.** New list pages copy its structure:
-`<Name>.jsx` (list page) + `<name>Api.js` + `components/<Name>FormModal.jsx` (add + edit in one modal) + `e2e/<name>.spec.js`.
+`<Name>.jsx` (list page: data from `useLoadData`, success message from `useAutoHideMessage`, `refresh()` after
+add / edit / delete) + `<name>Api.js` + `components/<Name>FormModal.jsx` (add + edit in one modal) + `e2e/<name>.spec.js`.
 
 ```text
 pages/Products/
@@ -135,7 +153,7 @@ pages/Products/
 
 ### `<Page>.jsx`
 
-- Uses `useState` / `useEffect`, simple functions, simple conditional rendering.
+- Uses `useState`, the shared hooks from `src/hooks/` (loading data: see below), simple functions, simple conditional rendering.
 - Calls functions from its own `<page>Api.js` only. No axios / `api` import in JSX files.
 - Must render the 4 states: **loading**, **error (with retry)**, **empty**, **data**. Use the shared state components.
 - Search / filtering of lists is done on the client (the API has no pagination yet).
@@ -144,18 +162,20 @@ pages/Products/
 
 - Imports the shared instance: `import api from "../../services/api";`
 - Each function **returns the payload (`response.data.data`)**, so pages never see axios responses.
-- Each function that sends a body **builds it explicitly** from the form values (so unknown fields are never sent, numbers are converted). An optional text field the user emptied is sent as `""` so PATCH can clear it.
+- Each function that sends a body **builds it explicitly** from the form values (so unknown fields are never sent, numbers are converted). Optional fields go through `optionalField(value, isEdit)`: left out on create when empty, `null` on edit when emptied (null clears the saved value). Money stays a number (`0` when empty), never `null`.
 - No React state, no UI logic, no `try/catch` (errors bubble up to the page).
 - Dropdown data for this page (e.g. categories for the product form) is fetched by functions in **this** file — small duplication between pages is OK; importing another page's API file is not.
 
 ```javascript
 // pages/Branches/branchesApi.js
 import api from "../../services/api";
+import { optionalField } from "../../utils/body";
 
-function toBranchBody(form) {
+// Optional fields: left out on create when empty; null on edit when emptied (null clears them).
+function toBranchBody(form, isEdit) {
   return {
     name: form.name.trim(),
-    address: form.address.trim(), // "" when emptied — undefined would make PATCH keep the old value
+    address: optionalField(form.address, isEdit),
   };
 }
 
@@ -165,12 +185,12 @@ export async function getBranches() {
 }
 
 export async function createBranch(form) {
-  const response = await api.post("/branch", toBranchBody(form));
+  const response = await api.post("/branch", toBranchBody(form, false));
   return response.data.data;
 }
 
 export async function updateBranch(id, form) {
-  const response = await api.patch(`/branch/${id}`, toBranchBody(form));
+  const response = await api.patch(`/branch/${id}`, toBranchBody(form, true));
   return response.data.data;
 }
 
@@ -179,40 +199,43 @@ export async function deleteBranch(id) {
 }
 ```
 
-### Standard data-loading pattern
+### Standard data-loading pattern — `hooks/useLoadData` + `hooks/useAutoHideMessage`
+
+Pages never write their own loading code, success-message timer or `useEffect` for loading. They use the two hooks:
 
 ```javascript
-const [branches, setBranches] = useState([]);
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState("");
+// One list (see pages/Branches)
+const { data, loading, error, refreshError, reload, refresh } = useLoadData(getBranches);
+const branches = data ?? []; // data is null until the first answer
 
-async function loadBranches() {
-  setLoading(true);
-  setError("");
-  try {
-    setBranches(await getBranches());
-  } catch (err) {
-    setError(getErrorMessage(err));
-  } finally {
-    setLoading(false);
-  }
+// Several lists: one loader OUTSIDE the component that returns an object (see pages/Inventories)
+async function loadPageData() {
+  const [inventories, branches] = await Promise.all([getInventories(), getBranches()]);
+  return { inventories, branches };
 }
+const { data, ... } = useLoadData(loadPageData);
+const inventories = data?.inventories ?? [];
 
-useEffect(() => {
-  // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  loadBranches();
-}, []);
+// Load again when a value changes — deps are simple values (see pages/ProductStock)
+useLoadData(async () => (activeId ? getStock(activeId) : []), [activeId]);
+
+// Success message that hides by itself after 4 seconds
+const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
 ```
 
-The `eslint-disable` line is needed: the `react-hooks/set-state-in-effect` rule flags any function
-that sets state when it is called from an effect, even when the state is set after `await`.
+- `loading` → `<LoadingState />` · `error` → `<ErrorState onRetry={reload} />` · `refreshError` → `<Alert type="error">`.
+- `reload()` = the retry button: shows LoadingState again.
+- `refresh()` = **silent**: the table stays on screen (no LoadingState, no jump to the top) while the new data loads.
+  After every add / edit / delete call `refresh()`, never `reload()`. If a refresh fails, the old data stays
+  and `refreshError` explains it.
+- An answer that arrives after a newer request started is ignored (fast switching in ProductStock).
+- No `eslint-disable` anywhere in `src/`: the hooks are written so the `react-hooks` lint rules pass.
 
 ### Adding a new page — checklist
 
 1. Read the module doc(s) in `../backend/doc/`.
 2. Create `pages/<Name>/<Name>.jsx` and `pages/<Name>/<name>Api.js`.
-3. Add the route inside the `MainLayout` group in `routes/AppRoutes.jsx`.
+3. Add the route inside the `RoleRoute` group in `routes/AppRoutes.jsx` (SUPERADMIN sees it automatically; other roles: `routes/rolePages.js`).
 4. Add the Arabic link to the right group in `NAV_GROUPS` (`components/layout/Sidebar.jsx`).
 5. Build the UI with components from `components/ui/`.
 6. Write `e2e/<page>.spec.js` (see §10).
@@ -245,8 +268,30 @@ that sets state when it is called from an effect, even when the state is set aft
 - `/login` is public and outside `MainLayout`. All other pages are protected by `ProtectedRoute`.
 - Logout lives in the Header only: `clearSession()` → navigate to `/login`.
 - `/auth/signup` is TEMPORARY on the backend — never build a signup screen.
-- No role-based UI yet. Keep `user.role` stored; do not invent permissions.
-- Route access checks (logged in / logged out) live inside guard components (`ProtectedRoute`, `PublicOnlyRoute`) so they run on every render. Never compute them inline in `AppRoutes` JSX — the value goes stale and can cause redirect loops.
+- Route access checks (logged in / logged out / role) live inside guard components (`ProtectedRoute`, `PublicOnlyRoute`, `RoleRoute`) so they run on every render. Never compute them inline in `AppRoutes` JSX — the value goes stale and can cause redirect loops.
+
+### Roles — `routes/rolePages.js` (UPDATE_3 PART 6.1)
+
+- `ROLE_PAGES` maps each role to the page paths it may open: `{ SUPERADMIN: ["*"], ADMIN: [], ACCOUNTANT: [], SALES: [], USER: [] }`.
+  `canAccess(role, path)` checks it; the home page `/` is always allowed.
+- The Sidebar shows only allowed links (empty groups are hidden). Opening a non-allowed page by URL shows
+  "ليس لديك صلاحية لعرض هذه الصفحة" (`RoleRoute` → `pages/NoPermission`) with a link to the home page.
+- Until Week 5 only SUPERADMIN can use the API. **Opening pages per role in Week 5 = edit `ROLE_PAGES` in this one file**
+  (e.g. `ACCOUNTANT: ["/customers", "/suppliers"]`). Do not add role checks anywhere else; do not invent permissions.
+
+### Postponed (backend does it at the end of the project — frontend keeps blocking)
+
+UPDATE_3 PART 6.3: the backend does NOT prevent these yet, so the frontend must keep blocking them:
+- a user deleting their own account, or changing their own role (Users page: disabled + note);
+- deleting or demoting the LAST SUPERADMIN;
+- deleted users keep their `employeeId` / `email`, so the same employee / email cannot get a new account
+  (409 `BELONGS_TO_DELETED`: field `employeeId` → "هذا الموظف مرتبط بمستخدم محذوف", field `email` →
+  "هذا البريد مرتبط بمستخدم محذوف"; other fields → the generic `ERROR_AR` message).
+
+### Waiting for Week 2
+
+- Manual stock edit (`PATCH /product-inventory/:id`, ProductStock "تعديل الرصيد") becomes a stock **adjustment
+  ("تسوية") with a required reason** in Week 2 (UPDATE_3 PART 6.2). Wait for the Week 2 docs — do not change it now.
 
 ### Errors — `utils/errors.js`
 
@@ -257,6 +302,11 @@ that sets state when it is called from an effect, even when the state is set aft
 - No response at all (server down / network) → "تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى".
 - Login screen: `UNAUTHORIZED` → "اسم المستخدم أو كلمة المرور غير صحيحة" (pass an option like `{ context: "login" }`).
 - Unknown / missing `code` → the `INTERNAL_ERROR` message.
+- `DOES_NOT_EXIST` (UPDATE_3 PART 2) = an id in the body points to a missing **or deleted** record → "<field label> غير موجود أو محذوف"
+  (e.g. "الفرع غير موجود أو محذوف"). Forms with dropdowns (Products, ProductStock, Users) then keep the form open
+  with the error, clear that choice and call `onRefreshLists()` → the page's silent `refresh()`, so the deleted
+  item disappears from the Select.
+- `BAD_REQUEST` + field `branchId` (Users) → "فرع المستخدم يجب أن يكون نفس فرع الموظف" (UPDATE_3 PART 3).
   Never show raw English backend messages to the user. Add new codes/field labels to the maps when new docs arrive.
 
 ### Formatting — `utils/format.js`
@@ -292,6 +342,8 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `SearchInput`                              | search box above tables                                                       |
 | `Alert`                                    | inline success / error messages                                               |
 | `LoadingState`, `ErrorState`, `EmptyState` | the page states (ErrorState has a retry button)                               |
+| `BalanceCell`                              | opening balance in a table: amount + "مدين"/"دائن" badge + meaning line        |
+| `BalancePreview`                           | under a balance input: sign hint + live preview "سيتم تسجيله: ..."            |
 
 Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title, subtitle, action button slot).
 
@@ -325,19 +377,31 @@ Rules: pages never import or render `MainLayout`, Sidebar or Header. Add a new s
 | `text-slate-900` / `text-slate-500`                                       | main / secondary text          |
 | `red-600` / `red-700`                                                     | danger                         |
 | `green-*`, `amber-*`                                                      | success / warning only         |
+| `bg-sky-600` / `bg-violet-600` + `text-white`                             | sky = مدين (debit) · violet = دائن (credit) — reserved for debit/credit only, never used for anything else |
 
 Use `primary` tokens instead of `blue-600` so the brand color can change in one place. Style: clean, calm, professional ERP — light shadows, `rounded-lg`, no gradients, no heavy animations. Must work on desktop, laptop and tablet.
 
 ### Usability rules (users are accountants, not developers)
 
 - Every clickable element shows a pointer cursor (global rule in `index.css`); disabled shows `not-allowed`.
-- Colors have one fixed meaning and are never mixed: blue (`primary`) = main / safe action, red = destructive or leaving (delete, logout), green = success, amber = warning, gray/slate = neutral or cancel. Never use red for a normal action or blue for a destructive one.
+- Colors have one fixed meaning and are never mixed: blue (`primary`) = main / safe action, red = destructive or leaving (delete, logout), green = success, amber = warning, gray/slate = neutral or cancel, sky / violet = مدين / دائن badges only. Never use red for a normal action or blue for a destructive one.
 - Every destructive or session-ending action (delete, logout, discarding unsaved changes) asks for confirmation with `ConfirmDialog`; the confirm button is red and names the action (e.g. "حذف الفرع", "تسجيل الخروج"), never a vague "تأكيد" or "نعم".
 - All interactive elements have clear hover and keyboard focus states.
 - Icon-only buttons have an Arabic `title` (tooltip) and `aria-label`, e.g. `title="تعديل"`.
 - Buttons use clear Arabic verbs that say what will happen ("حفظ", "إضافة صنف", "حذف").
 - Modals close only with X / إلغاء / Escape — never by clicking the backdrop.
 - Numbers and dates are shown with Western digits (123).
+- **Balances (debit / credit)** use the standard accounting labels and are always shown in full — never a tooltip,
+  never a bare minus sign:
+  - in tables: the amount **without its sign** (`text-sm font-semibold`) + a solid badge "مدين" (**sky**:
+    `bg-sky-600 text-white`) or "دائن" (**violet**: `bg-violet-600 text-white`), both
+    `rounded-full px-2.5 py-0.5 text-sm font-bold`, no border; and a second line in small gray text with
+    the plain meaning (e.g. "على العميل لنا"). Debit / credit is a direction, not good or bad: never red / green.
+    0 → "0.00" with no badge. Use `BalanceCell` (the colors live only there).
+  - in forms: under the balance input a short gray hint on how to type the sign, and a **live preview** that updates
+    while typing ("سيتم تسجيله: 250.50 دائن — للعميل علينا"; nothing for empty / 0 / invalid). Use `BalancePreview`.
+  - the sign → { label, meaning } logic lives only in `getBalanceSide(value, party)` (`utils/labels.js`):
+    customer + = مدين "على العميل لنا", − = دائن "للعميل علينا" · supplier + = دائن "علينا للمورد", − = مدين "لنا عند المورد".
 - Every action gives visible feedback: loading state while waiting, a success message after, an Arabic error if it fails.
 
 ---
@@ -383,7 +447,7 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 | Week | Backend docs | Frontend pages                                                                                                 | Status |
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
-| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ⏳     |
+| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users (+ UPDATE_3) | ✅     |
 | 2    | `doc/week2/` | Purchases / Sales invoices & returns, Quotations                                                               | ⏳     |
 
 Update this table when a page is finished.

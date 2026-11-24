@@ -1,10 +1,13 @@
 // Side navigation. Links are grouped in NAV_GROUPS.
-// To add a page link, add one item to the right group (groups with no items are not shown).
+// To add a page link, add one item to the right group.
+// Only the links the user's role may open are shown (routes/rolePages.js); empty groups are hidden.
 // On tablets (below lg) only the icons are shown: group titles are hidden and a thin
 // divider separates the groups instead.
 import { NavLink } from "react-router-dom";
 import { Boxes, Building2, House, IdCard, Package, Ruler, Tags, Truck, UserCog, UserRound, Warehouse } from "lucide-react";
 import logo from "../../assets/logo.png";
+import { canAccess } from "../../routes/rolePages";
+import { getUser } from "../../services/session";
 
 const NAV_GROUPS = [
   {
@@ -44,7 +47,11 @@ const NAV_GROUPS = [
 ];
 
 function Sidebar() {
-  const visibleGroups = NAV_GROUPS.filter((group) => group.items.length > 0);
+  const role = getUser()?.role;
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => canAccess(role, item.path)),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <aside className="flex h-full w-20 shrink-0 flex-col border-e border-slate-200 bg-white lg:w-64">

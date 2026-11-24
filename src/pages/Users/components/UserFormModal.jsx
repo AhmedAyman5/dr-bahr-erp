@@ -2,10 +2,11 @@
 // Usage (render it only while open, so the form starts fresh every time):
 //   {formOpen && (
 //     <UserFormModal user={userToEdit} users={users} employees={employees} branches={branches}
-//       currentUserId={currentUser?.id} onClose={closeForm} onSaved={handleSaved} />
+//       currentUserId={currentUser?.id} onClose={closeForm} onSaved={handleSaved} onRefreshLists={refresh} />
 //   )}
 //   user = null → add mode, user = object → edit mode.
 //   onSaved(message, savedUser) runs after a successful save.
+//   onRefreshLists() reloads the employee / branch lists silently (called when a chosen one was deleted).
 //
 // Rules:
 // - Add: password + confirmation required. Edit: both optional, sent only when typed.
@@ -25,10 +26,14 @@ import PasswordInput from "./PasswordInput";
 
 const FORM_ID = "user-form";
 const MIN_PASSWORD_LENGTH = 6;
+// Same rule as the backend (UPDATE_3, PART 4.1), checked after trim(): 3 to 30 characters,
+// only English letters, digits, dot, underscore and dash (no spaces, no Arabic, no "@").
+// The Login page does NOT use it: old accounts must still be able to log in.
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,30}$/;
 // Simple shape check (something@something.something); the backend checks it fully.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function UserFormModal({ user, users, employees, branches, currentUserId, onClose, onSaved }) {
+function UserFormModal({ user, users, employees, branches, currentUserId, onClose, onSaved, onRefreshLists }) {
   const isEdit = Boolean(user);
   const isSelf = isEdit && user.id === currentUserId;
 
@@ -69,6 +74,9 @@ function UserFormModal({ user, users, employees, branches, currentUserId, onClos
 
   const selectedEmployee = employees.find((employee) => employee.id === form.employeeId);
   const branchLocked = Boolean(selectedEmployee);
+  // A linked employee / branch that no longer exists: shown as "موظف محذوف" / "فرع محذوف" in gray.
+  const employeeDeleted = Boolean(form.employeeId) && !selectedEmployee;
+  const branchDeleted = Boolean(form.branchId) && !branches.some((branch) => branch.id === form.branchId);
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -90,8 +98,8 @@ function UserFormModal({ user, users, employees, branches, currentUserId, onClos
     const username = form.username.trim();
     if (!username) {
       errors.username = "اسم المستخدم مطلوب";
-    } else if (/\s/.test(username)) {
-      errors.username = "اسم المستخدم لا يجب أن يحتوي على مسافات";
+    } else if (!USERNAME_PATTERN.test(username)) {
+      errors.username = "اسم المستخدم من 3 إلى 30 حرفًا: حروف إنجليزية وأرقام و . _ - فقط بدون مسافات";
     }
 
     // Add: the password is required. Edit: empty = keep the current password.
@@ -120,11 +128,18 @@ function UserFormModal({ user, users, employees, branches, currentUserId, onClos
 
     setSaving(true);
     try {
-      const savedUser = isEdit ? await updateUser(user.id, form) : await createUser(form);
+      const savedUser = isEdit ? await updateUser(user.id, form, initialForm) : await createUser(form);
       onSaved(isEdit ? "تم تعديل المستخدم بنجاح" : "تمت إضافة المستخدم بنجاح", savedUser);
     } catch (err) {
       // Keep the typed data so the user can fix it and try again.
       setError(getErrorMessage(err));
+      // The chosen employee / branch was deleted meanwhile: clear that choice ("بدون موظف" /
+      // "بدون فرع") and reload the lists, so the deleted one disappears from the Select.
+      const { code, field } = err.response?.data || {};
+      if (code === "DOES_NOT_EXIST" && (field === "employeeId" || field === "branchId")) {
+        setForm({ ...form, [field]: "" });
+        onRefreshLists();
+      }
       setSaving(false);
     }
   }
@@ -216,6 +231,7 @@ function UserFormModal({ user, users, employees, branches, currentUserId, onClos
           onChange={handleEmployeeChange}
           options={employeeOptions}
           placeholder="بدون موظف"
+          selectClassName={employeeDeleted ? "text-slate-400" : ""}
         />
         <div>
           <Select
@@ -226,6 +242,7 @@ function UserFormModal({ user, users, employees, branches, currentUserId, onClos
             options={branchOptions}
             placeholder="بدون فرع"
             readOnly={branchLocked}
+            selectClassName={branchDeleted ? "text-slate-400" : ""}
           />
           {branchLocked && <p className="mt-1 text-xs text-slate-500">الفرع يتحدد من فرع الموظف</p>}
         </div>

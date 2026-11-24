@@ -143,19 +143,85 @@ test.describe("with backend", () => {
     await expect(rowWith(page, branch.name)).toHaveCount(0);
   });
 
-  test('clearing the address on edit shows "-" in the table', async ({ page, request }) => {
+  test("after saving an edit the list refreshes silently: no LoadingState, the table stays visible", async ({
+    page,
+    request,
+  }) => {
+    const branch = await createBranchByApi(request, { name: `فرع تحديث ${tag}`, address: "عنوان" });
+    const newName = `فرع بعد التحديث ${tag}`;
+    await page.goto("/branches");
+    await expect(rowWith(page, branch.name)).toHaveCount(1);
+
+    // From now on: remember if the loading text ever shows, and slow the list request down
+    // so a LoadingState would have time to appear.
+    await page.evaluate(() => {
+      window.sawLoadingState = false;
+      new MutationObserver(() => {
+        if (document.body.textContent.includes("جارٍ تحميل الفروع...")) window.sawLoadingState = true;
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    await page.route(
+      (url) => url.pathname === "/branch",
+      async (route) => {
+        if (route.request().method() === "GET") await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      },
+    );
+
+    await page.getByRole("button", { name: `تعديل ${branch.name}` }).click();
+    const dialog = page.getByRole("dialog", { name: "تعديل الفرع" });
+    await dialog.getByLabel("الاسم").fill(newName);
+    const refreshRequest = page.waitForRequest((req) => req.url() === `${API_URL}/branch` && req.method() === "GET");
+    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await refreshRequest;
+
+    // While the slow refresh runs: the table is still on screen with the old row.
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الفرع بنجاح" })).toBeVisible();
+    await expect(page.getByRole("table")).toBeVisible();
+    await expect(rowWith(page, branch.name)).toHaveCount(1);
+
+    // When it is done: the new name is shown, and LoadingState never appeared.
+    await expect(rowWith(page, newName)).toHaveCount(1);
+    await expect(rowWith(page, branch.name)).toHaveCount(0);
+    expect(await page.evaluate(() => window.sawLoadingState)).toBe(false);
+  });
+
+  test('clearing the address on edit sends null and shows "-" in the table', async ({ page, request }) => {
     const branch = await createBranchByApi(request, { name: `فرع عنوان ${tag}`, address: "عنوان سيتم مسحه" });
     await page.goto("/branches");
     await expect(rowWith(page, branch.name)).toContainText("عنوان سيتم مسحه");
 
     await page.getByRole("button", { name: `تعديل ${branch.name}` }).click();
     const dialog = page.getByRole("dialog", { name: "تعديل الفرع" });
-    await dialog.getByLabel("العنوان").fill("");
+    await dialog.getByLabel("العنوان").fill("   ");
+    const requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
     await dialog.getByRole("button", { name: "حفظ" }).click();
+    expect((await requestPromise).postDataJSON()).toEqual({ name: branch.name, address: null });
 
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الفرع بنجاح" })).toBeVisible();
     const row = rowWith(page, branch.name);
     await expect(row.getByRole("cell").nth(2)).toHaveText("-");
+
+    // The API agrees: the address is really cleared.
+    const response = await request.get(`${API_URL}/branch/${branch.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect((await response.json()).data.address).toBeNull();
+  });
+
+  test("add without an address: the empty address is left out of the body", async ({ page }) => {
+    const name = `فرع بدون عنوان ${tag}`;
+    await page.goto("/branches");
+    await page.getByRole("button", { name: "إضافة فرع" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "إضافة فرع" });
+    await dialog.getByLabel("الاسم").fill(name);
+
+    const requestPromise = page.waitForRequest((req) => req.method() === "POST");
+    await dialog.getByRole("button", { name: "حفظ" }).click();
+    expect((await requestPromise).postDataJSON()).toEqual({ name });
+
+    await expect(rowWith(page, name).getByRole("cell").nth(2)).toHaveText("-");
   });
 
   test("validation: empty and 1-letter names show Arabic errors and send no request", async ({ page }) => {

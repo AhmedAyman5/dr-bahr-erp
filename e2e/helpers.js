@@ -25,6 +25,18 @@ export const test = base.extend({
   // Regexes of console errors this test expects. Default: none allowed.
   allowedConsoleErrors: [[], { option: true }],
 
+  // The `request` fixture (direct API calls from tests) with "Connection: close": every call
+  // gets a fresh connection. With the default keep-alive, a call made after the test spent
+  // ~5 s in the browser could reuse a socket the backend (Node's 5 s keepAliveTimeout) was
+  // closing at that moment → random "read ECONNRESET" under load.
+  // (Playwright's fixture callback is named `provide` here, not `use`: the React hooks lint rule
+  // would read `use(...)` as a hook call.)
+  request: async ({ playwright }, provide) => {
+    const context = await playwright.request.newContext({ extraHTTPHeaders: { Connection: "close" } });
+    await provide(context);
+    await context.dispose();
+  },
+
   // Runs automatically for every test.
   consoleErrors: [
     async ({ page, allowedConsoleErrors }, use) => {
@@ -136,6 +148,34 @@ export async function deleteByTag(request, token, path, tag) {
 // A short random text, so every test works with its own data.
 export function randomTag() {
   return Math.random().toString(36).slice(2, 8);
+}
+
+// Opening balance table cell (customers / suppliers): the amount WITHOUT its sign (in dir=ltr),
+// then the solid "مدين" (sky-600) / "دائن" (violet-600) badge and the meaning line. Leave label out for a 0 balance
+// (then the cell must contain the amount only, no badge).
+//   await expectBalanceCell(cell, "500.00", "مدين", "لنا عند المورد");
+//   await expectBalanceCell(cell, "0.00");
+export async function expectBalanceCell(cell, amount, label, meaning) {
+  await expect(cell.locator("span[dir=ltr]")).toHaveText(amount);
+  if (!label) {
+    await expect(cell).toHaveText(amount);
+    return;
+  }
+  const badge = cell.getByText(label, { exact: true });
+  await expect(badge).toBeVisible();
+  // Each side has its own color: مدين = sky, دائن = violet. Never red / green (a direction, not good or bad).
+  const color = label === "مدين" ? "sky" : "violet";
+  const otherColor = label === "مدين" ? "violet" : "sky";
+  // Solid and bold so it is clearly visible.
+  for (const className of [`bg-${color}-600`, "text-white", "font-bold", "text-sm", "rounded-full"]) {
+    await expect(badge).toHaveClass(new RegExp(`(^|\\s)${className}(\\s|$)`));
+  }
+  await expect(badge).not.toHaveClass(new RegExp(`${otherColor}|slate|red|green|border`));
+  // The amount is semibold and a bit bigger than the meaning line (text-xs).
+  await expect(cell.locator("span[dir=ltr]")).toHaveClass(/(^|\s)font-semibold(\s|$)/);
+  await expect(cell.locator("span[dir=ltr]")).toHaveClass(/(^|\s)text-sm(\s|$)/);
+  await expect(cell.getByText(meaning, { exact: true })).toBeVisible();
+  await expect(cell).toHaveText(`${amount}${label}${meaning}`);
 }
 
 export async function getStoredToken(page) {

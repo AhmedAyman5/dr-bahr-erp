@@ -272,16 +272,24 @@ test.describe("with backend", () => {
     await expect(dialog.getByText("كلمة المرور مطلوبة")).toBeVisible();
     await expect(dialog.getByText("الصلاحية مطلوبة")).toBeVisible();
 
-    // Username: only spaces, then a space inside.
+    // Username: only spaces = empty.
     await dialog.getByLabel("اسم المستخدم").fill("   ");
     await save.click();
     await expect(dialog.getByText("اسم المستخدم مطلوب")).toBeVisible();
-    await dialog.getByLabel("اسم المستخدم").fill(`e2e ${tag}`);
-    await save.click();
-    await expect(dialog.getByText("اسم المستخدم لا يجب أن يحتوي على مسافات")).toBeVisible();
-    // Typing clears the error.
+
+    // Same rule as the backend (after trim): 3–30 characters of A-Z a-z 0-9 . _ -
+    const usernameError = dialog.getByText("اسم المستخدم من 3 إلى 30 حرفًا: حروف إنجليزية وأرقام و . _ - فقط بدون مسافات");
+    for (const bad of ["ab", "a".repeat(31), `e2e ${tag}`, "أحمد", "ahmed@shop"]) {
+      await dialog.getByLabel("اسم المستخدم").fill(bad);
+      await save.click();
+      await expect(usernameError, `"${bad}" must be rejected`).toBeVisible();
+    }
+    for (const good of ["a.b_c-1", "  abc  ", "a".repeat(30)]) {
+      await dialog.getByLabel("اسم المستخدم").fill(good);
+      await save.click();
+      await expect(usernameError, `"${good}" must be accepted`).toBeHidden();
+    }
     await dialog.getByLabel("اسم المستخدم").fill(`e2e.${tag}.val`);
-    await expect(dialog.getByText("اسم المستخدم لا يجب أن يحتوي على مسافات")).toBeHidden();
 
     await dialog.getByLabel("الصلاحية").selectOption("ADMIN");
 
@@ -310,6 +318,91 @@ test.describe("with backend", () => {
 
     await expect(dialog).toBeVisible();
     expect(sent).toEqual([]);
+  });
+
+  test.describe("employee deleted while the form is open", () => {
+    // The browser logs the 400 answer itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 400/] });
+
+    test("save → 400 DOES_NOT_EXIST: Arabic error, form stays open, the employee leaves the list", async ({
+      page,
+      request,
+    }) => {
+      const sent = trackUserWrites(page);
+      const employee = await createEmployee(request, branch.id, `موظف سيحذف ${tag}`);
+      const username = `e2e.${tag}.gone`;
+      await page.goto("/users");
+
+      await page.getByRole("button", { name: "إضافة مستخدم" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة مستخدم" });
+      await dialog.getByLabel("اسم المستخدم").fill(username);
+      await dialog.getByLabel("الصلاحية").selectOption("USER");
+      await field(dialog, "password").fill("abc123");
+      await field(dialog, "confirmPassword").fill("abc123");
+      const employeeSelect = dialog.getByLabel("الموظف");
+      await employeeSelect.selectOption({ label: `${employee.fullName} (${employee.code})` });
+      await expect(dialog.getByLabel("الفرع")).toHaveValue(branch.id);
+
+      // Someone deletes the employee in the meantime.
+      const deleted = await request.delete(`${API_URL}/employees/${employee.id}`, { headers: headers() });
+      expect(deleted.ok()).toBeTruthy();
+
+      const listsRefresh = page.waitForRequest((req) => req.url() === `${API_URL}/employees` && req.method() === "GET");
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+
+      // Real backend answer (UPDATE_3): 400 DOES_NOT_EXIST, field employeeId.
+      await expect(dialog.getByRole("alert").filter({ hasText: "الموظف غير موجود أو محذوف" })).toBeVisible();
+      await expect(dialog).toBeVisible();
+      expect(sent).toEqual([`POST ${API_URL}/users`]);
+
+      // The lists were reloaded silently: the deleted employee is gone, the choice is "بدون موظف".
+      await listsRefresh;
+      await expect(employeeSelect.locator("option", { hasText: employee.fullName })).toHaveCount(0);
+      await expect(employeeSelect).toHaveValue("");
+      await expect(dialog.getByLabel("اسم المستخدم")).toHaveValue(username);
+      await expect(page.getByText("جارٍ تحميل المستخدمين...")).toHaveCount(0);
+    });
+  });
+
+  test("a user whose linked employee was deleted can still be edited: employeeId is not sent", async ({
+    page,
+    request,
+  }) => {
+    const employee = await createEmployee(request, branch.id, `موظف يحذف لاحقا ${tag}`);
+    const user = await createUser(request, {
+      username: `e2e.${tag}.orphan`,
+      password: "secret123",
+      role: "USER",
+      employeeId: employee.id,
+    });
+    // The employee is deleted after the user was linked to it.
+    const deleted = await request.delete(`${API_URL}/employees/${employee.id}`, { headers: headers() });
+    expect(deleted.ok()).toBeTruthy();
+    const newEmail = `${tag}.orphan@example.com`;
+    await page.goto("/users");
+
+    await page.getByRole("button", { name: `تعديل ${user.username}` }).click();
+    const dialog = page.getByRole("dialog", { name: "تعديل المستخدم" });
+    const employeeSelect = dialog.getByLabel("الموظف");
+    // Shown as "موظف محذوف" in gray, not as an empty choice.
+    await expect(employeeSelect).toHaveValue(employee.id);
+    await expect(employeeSelect.locator("option:checked")).toHaveText("موظف محذوف");
+    await expect(employeeSelect).toHaveClass(/text-slate-400/);
+
+    await dialog.getByLabel("البريد الإلكتروني").fill(newEmail);
+    const requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
+    await dialog.getByRole("button", { name: "حفظ" }).click();
+    const body = (await requestPromise).postDataJSON();
+    expect(body).toEqual({ username: user.username, role: "USER", email: newEmail });
+    expect(body).not.toHaveProperty("employeeId");
+    expect(body).not.toHaveProperty("branchId");
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("alert").filter({ hasText: "تم تعديل المستخدم بنجاح" })).toBeVisible();
+    await expect(rowWith(page, user.username).getByRole("cell").nth(4)).toHaveText(newEmail);
+    // The API agrees: email changed, the old link is kept.
+    const saved = (await (await getUserById(request, user.id)).json()).data;
+    expect(saved).toMatchObject({ email: newEmail, employeeId: employee.id });
   });
 
   test.describe("server conflicts", () => {
@@ -442,12 +535,11 @@ test.describe("with backend", () => {
     await dialog.getByRole("button", { name: "حفظ" }).click();
     let patch = await requestPromise;
     expect(patch.url()).toBe(`${API_URL}/users/${user.id}`);
+    // employee / branch were not changed → not sent.
     expect(patch.postDataJSON()).toEqual({
       username: newUsername,
       role: "ADMIN",
       email: user.email,
-      employeeId: null,
-      branchId: branch.id,
     });
 
     await expect(dialog).toBeHidden();
@@ -724,6 +816,97 @@ test.describe("mocked API", () => {
     });
   });
 
+  test.describe("employee / email kept by a deleted user", () => {
+    // The browser logs the 409 answer itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 409/] });
+
+    for (const [errorField, message] of [
+      ["employeeId", "هذا الموظف مرتبط بمستخدم محذوف"],
+      ["email", "هذا البريد مرتبط بمستخدم محذوف"],
+    ]) {
+      test(`409 BELONGS_TO_DELETED on ${errorField} → "${message}"`, async ({ page }) => {
+        await setFakeSession(page);
+        await mockLists(page);
+        await page.route(isUsersApi, (route) => {
+          const req = route.request();
+          if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: CORS });
+          if (req.method() === "POST") {
+            return route.fulfill({
+              status: 409,
+              headers: CORS,
+              json: {
+                statusCode: 409,
+                message: `${errorField} belongs to a deleted user`,
+                error: "Conflict",
+                code: "BELONGS_TO_DELETED",
+                field: errorField,
+              },
+            });
+          }
+          return route.fulfill({ status: 200, json: { message: "ok", data: [] }, headers: CORS });
+        });
+        await page.goto("/users");
+
+        await page.getByRole("button", { name: "إضافة مستخدم" }).first().click();
+        const dialog = page.getByRole("dialog", { name: "إضافة مستخدم" });
+        await dialog.getByLabel("اسم المستخدم").fill("mock.user");
+        await dialog.getByLabel("الصلاحية").selectOption("USER");
+        await field(dialog, "password").fill("abc123");
+        await field(dialog, "confirmPassword").fill("abc123");
+        await dialog.getByLabel("البريد الإلكتروني").fill("old@example.com");
+        await dialog.getByLabel("الموظف").selectOption({ label: "موظف وهمي (EMP-000001)" });
+        await dialog.getByRole("button", { name: "حفظ" }).click();
+
+        await expect(dialog.getByRole("alert")).toHaveText(message);
+        await expect(dialog).toBeVisible();
+      });
+    }
+  });
+
+  test.describe("server rules", () => {
+    // The browser logs the 400 answer itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 400/] });
+
+    test('branch ≠ employee branch (400 BAD_REQUEST branchId) → "فرع المستخدم يجب أن يكون نفس فرع الموظف"', async ({
+      page,
+    }) => {
+      await setFakeSession(page);
+      await mockLists(page);
+      await page.route(isUsersApi, (route) => {
+        const req = route.request();
+        if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: CORS });
+        if (req.method() === "POST") {
+          return route.fulfill({
+            status: 400,
+            headers: CORS,
+            json: {
+              statusCode: 400,
+              message: "branchId must match the employee's branch",
+              error: "Bad Request",
+              code: "BAD_REQUEST",
+              field: "branchId",
+            },
+          });
+        }
+        return route.fulfill({ status: 200, json: { message: "ok", data: [] }, headers: CORS });
+      });
+      await page.goto("/users");
+
+      await page.getByRole("button", { name: "إضافة مستخدم" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة مستخدم" });
+      await dialog.getByLabel("اسم المستخدم").fill("mock.user");
+      await dialog.getByLabel("الصلاحية").selectOption("USER");
+      await field(dialog, "password").fill("abc123");
+      await field(dialog, "confirmPassword").fill("abc123");
+      await dialog.getByLabel("الموظف").selectOption({ label: "موظف وهمي (EMP-000001)" });
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+
+      await expect(dialog.getByRole("alert")).toHaveText("فرع المستخدم يجب أن يكون نفس فرع الموظف");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel("الموظف")).toHaveValue("e1");
+    });
+  });
+
   test("empty list shows EmptyState with the add button", async ({ page }) => {
     await setFakeSession(page);
     await mockLists(page);
@@ -767,7 +950,9 @@ test.describe("mocked API", () => {
       await page.getByRole("button", { name: "تعديل orphan.user" }).click();
       const dialog = page.getByRole("dialog", { name: "تعديل المستخدم" });
       await expect(dialog.getByLabel("الموظف").locator("option:checked")).toHaveText("موظف محذوف");
+      await expect(dialog.getByLabel("الموظف")).toHaveClass(/text-slate-400/);
       await expect(dialog.getByLabel("الفرع").locator("option:checked")).toHaveText("فرع محذوف");
+      await expect(dialog.getByLabel("الفرع")).toHaveClass(/text-slate-400/);
       await expect(dialog.getByLabel("الفرع")).toBeEnabled();
     });
   });
@@ -800,13 +985,11 @@ test.describe("mocked API", () => {
     await dialog.getByRole("button", { name: "حفظ" }).click();
     await expect(dialog).toBeHidden();
 
-    // Role unchanged, no password key.
+    // Role unchanged, no password key, employee / branch unchanged → not sent.
     expect(patchBody).toEqual({
       username: "e2e-renamed",
       role: "SUPERADMIN",
       email: null,
-      employeeId: null,
-      branchId: null,
     });
     await expect(banner).toContainText("e2e-renamed");
     await expect(banner).not.toContainText(FAKE_USER.username);

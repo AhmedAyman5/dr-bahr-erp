@@ -304,7 +304,7 @@ test.describe("with backend", () => {
     await expect(rowWith(page, employee.fullName)).toHaveCount(0);
   });
 
-  test("edit: emptying national ID sends null (and job title \"\"); two employees can both have none", async ({
+  test("edit: emptying national ID, job title and hire date sends null; two employees can both have none", async ({
     page,
     request,
   }) => {
@@ -312,6 +312,7 @@ test.describe("with backend", () => {
       fullName: `موظف أ ${tag}`,
       nationalId: randomNationalId(),
       jobTitle: "سائق",
+      hireDate: "2024-05-05",
     });
     const second = await createEmployee(request, branch.id, {
       fullName: `موظف ب ${tag}`,
@@ -324,14 +325,16 @@ test.describe("with backend", () => {
       const dialog = page.getByRole("dialog", { name: "تعديل الموظف" });
       await dialog.getByLabel("الرقم القومي").fill("");
       await dialog.getByLabel("الوظيفة").fill("");
+      await dialog.getByLabel("تاريخ التعيين").fill("");
 
       const requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
       await dialog.getByRole("button", { name: "حفظ" }).click();
-      // No hire date was saved and none typed → hireDate is not sent.
+      // Every emptied optional field is sent as null (never ""), even one that was already empty.
       expect((await requestPromise).postDataJSON()).toEqual({
         fullName: employee.fullName,
         nationalId: null,
-        jobTitle: "",
+        jobTitle: null,
+        hireDate: null,
       });
 
       await expect(dialog).toBeHidden();
@@ -339,22 +342,22 @@ test.describe("with backend", () => {
       const cells = rowWith(page, employee.fullName).getByRole("cell");
       await expect(cells.nth(3)).toHaveText("-");
       await expect(cells.nth(4)).toHaveText("-");
+      await expect(cells.nth(5)).toHaveText("-");
     }
 
-    // The API agrees: both have no national ID.
+    // The API agrees: both have no national ID, job title or hire date.
     for (const employee of [first, second]) {
       const response = await request.get(`${API_URL}/employees/${employee.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      expect((await response.json()).data.nationalId).toBeNull();
+      expect((await response.json()).data).toMatchObject({ nationalId: null, jobTitle: null, hireDate: null });
     }
   });
 
-  test("hire date: emptying a saved date is blocked; changing it saves without a day shift", async ({
+  test('hire date: changing it saves without a day shift; emptying it clears it (null → "-")', async ({
     page,
     request,
   }) => {
-    const sent = trackEmployeeWrites(page);
     const employee = await createEmployee(request, branch.id, {
       fullName: `موظف تاريخ ${tag}`,
       hireDate: "2024-12-31",
@@ -367,17 +370,9 @@ test.describe("with backend", () => {
     const hireDate = dialog.getByLabel("تاريخ التعيين");
     await expect(hireDate).toHaveValue("2024-12-31");
 
-    // Emptying it → Arabic error, no request.
-    await hireDate.fill("");
-    await dialog.getByRole("button", { name: "حفظ" }).click();
-    await expect(dialog.getByText("لا يمكن حذف تاريخ التعيين بعد حفظه، يمكنك تعديله فقط")).toBeVisible();
-    await expect(dialog).toBeVisible();
-    expect(sent).toEqual([]);
-
     // Changing it saves.
     await hireDate.fill("2025-06-01");
-    await expect(dialog.getByText("لا يمكن حذف تاريخ التعيين بعد حفظه، يمكنك تعديله فقط")).toBeHidden();
-    const requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
+    let requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
     await dialog.getByRole("button", { name: "حفظ" }).click();
     expect((await requestPromise).postDataJSON().hireDate).toBe("2025-06-01");
 
@@ -386,7 +381,24 @@ test.describe("with backend", () => {
 
     // Opening the form again shows the new date unchanged.
     await page.getByRole("button", { name: `تعديل ${employee.fullName}` }).click();
-    await expect(dialog.getByLabel("تاريخ التعيين")).toHaveValue("2025-06-01");
+    await expect(hireDate).toHaveValue("2025-06-01");
+
+    // Emptying it saves (UPDATE_3: null clears the date) and the table shows "-".
+    await hireDate.fill("");
+    requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
+    await dialog.getByRole("button", { name: "حفظ" }).click();
+    expect((await requestPromise).postDataJSON().hireDate).toBeNull();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الموظف بنجاح" })).toBeVisible();
+    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(5)).toHaveText("-");
+
+    // The API agrees, and the form opens with an empty date.
+    const response = await request.get(`${API_URL}/employees/${employee.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect((await response.json()).data.hireDate).toBeNull();
+    await page.getByRole("button", { name: `تعديل ${employee.fullName}` }).click();
+    await expect(hireDate).toHaveValue("");
   });
 
   test("branch filter + search work together; the add form preselects the filtered branch", async ({

@@ -1,7 +1,7 @@
 // Inventories (المخازن = warehouses) — list page, same structure as pages/Branches.
 // Every warehouse belongs to a branch; the API returns only branchId, so the branch
 // names come from the branches list (loaded together with the warehouses).
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
@@ -14,12 +14,12 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatDate } from "../../utils/format";
 import { deleteInventory, getBranches, getInventories } from "./inventoriesApi";
 import InventoryFormModal from "./components/InventoryFormModal";
-
-const SUCCESS_HIDE_MS = 4000;
 
 // Case-insensitive search in name and address.
 function matchesSearch(inventory, search) {
@@ -28,17 +28,23 @@ function matchesSearch(inventory, search) {
   return [inventory.name, inventory.address].some((value) => (value || "").toLowerCase().includes(text));
 }
 
+// The warehouses and the branches (for their names, the filter and the form), loaded together.
+async function loadPageData() {
+  const [inventories, branches] = await Promise.all([getInventories(), getBranches()]);
+  return { inventories, branches };
+}
+
 function Inventories() {
-  // List (+ branches for names, filter and form)
-  const [inventories, setInventories] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List (+ branches for names, filter and form): loaded on mount.
+  // reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(loadPageData);
+  const inventories = data?.inventories ?? [];
+  const branches = data?.branches ?? [];
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState(""); // "" = all branches
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: inventoryToEdit = null → add mode
@@ -49,37 +55,9 @@ function Inventories() {
   const [inventoryToDelete, setInventoryToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadData() {
-    setLoading(true);
-    setError("");
-    try {
-      const [inventoriesData, branchesData] = await Promise.all([getInventories(), getBranches()]);
-      setInventories(inventoriesData);
-      setBranches(branchesData);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -100,7 +78,7 @@ function Inventories() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadData();
+    refresh();
   }
 
   async function handleDelete() {
@@ -109,13 +87,13 @@ function Inventories() {
       await deleteInventory(inventoryToDelete.id);
       showSuccess("تم حذف المخزن بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setInventoryToDelete(null);
     }
-    loadData();
+    refresh();
   }
 
   // Branch name by id; undefined when the branch is not in the list (deleted).
@@ -155,7 +133,7 @@ function Inventories() {
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل المخازن..." />;
-    if (error) return <ErrorState message={error} onRetry={loadData} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (inventories.length === 0) {
       return <EmptyState message="لا توجد مخازن بعد" action={renderAddButton()} />;
     }
@@ -222,13 +200,18 @@ function Inventories() {
         </Alert>
       )}
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 

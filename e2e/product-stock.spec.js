@@ -113,6 +113,49 @@ test.describe("with backend", () => {
     tag = undefined;
   });
 
+  test.describe("product deleted while the add form is open", () => {
+    // The browser logs the 400 answer itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 400/] });
+
+    test("save → 400 DOES_NOT_EXIST (was 404): Arabic error, form stays open, the product leaves the list", async ({
+      page,
+      request,
+    }) => {
+      const keep = await createProduct(request, { name: `صنف باق ${tag}` });
+      const gone = await createProduct(request, { name: `صنف سيحذف ${tag}` });
+      await openWarehouse(page);
+
+      await page.getByRole("button", { name: "إضافة صنف للمخزن" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة صنف للمخزن" });
+      const productSelect = dialog.getByLabel("الصنف");
+      await productSelect.selectOption({ label: productLabel(gone) });
+      await dialog.getByLabel(/الكمية/).fill("5");
+      await dialog.getByLabel("سعر التكلفة").fill("2");
+
+      // Someone deletes the product in the meantime.
+      const deleted = await request.delete(`${API_URL}/products/${gone.id}`, { headers: headers() });
+      expect(deleted.ok()).toBeTruthy();
+
+      const productsRefresh = page.waitForRequest(
+        (req) => req.url() === `${API_URL}/products` && req.method() === "GET",
+      );
+      const postPromise = page.waitForResponse((res) => res.request().method() === "POST");
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      const post = await postPromise;
+      expect(post.status()).toBe(400);
+      expect(await post.json()).toMatchObject({ code: "DOES_NOT_EXIST", field: "productId" });
+
+      await expect(dialog.getByRole("alert").filter({ hasText: "الصنف غير موجود أو محذوف" })).toBeVisible();
+      await expect(dialog).toBeVisible();
+      // The product list was reloaded silently: the deleted one is gone, the choice is cleared.
+      await productsRefresh;
+      await expect(productSelect.locator("option", { hasText: gone.name })).toHaveCount(0);
+      await expect(productSelect.locator("option", { hasText: keep.name })).toHaveCount(1);
+      await expect(productSelect).toHaveValue("");
+      await expect(dialog.getByLabel(/الكمية/)).toHaveValue("5");
+    });
+  });
+
   test("opens from the Sidebar link (after الأصناف) with no console errors", async ({ page }) => {
     await page.goto("/");
     const nav = page.getByRole("navigation");

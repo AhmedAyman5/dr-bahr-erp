@@ -1,16 +1,20 @@
 // All backend calls of the Products page.
 // Docs: ../backend/doc/week1/products.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 2)
 import api from "../../services/api";
+import { optionalField } from "../../utils/body";
 import { toMoneyNumber } from "../../utils/money";
 
 // Prices and reorderLimit are Decimal(18,4) in the database.
 const DECIMALS = { maxDecimals: 4 };
 
 // Only the documented fields. Never sent: code (server generates it), costingMethod (only one
-// value, the server default), nested objects (category, primaryItemUnit). Barcode: see below.
-function toProductBody(form) {
+// value, the server default), nested objects (category, primaryItemUnit).
+function toProductBody(form, isEdit) {
   return {
     name: form.name.trim(),
+    // barcode is UNIQUE and optional: left out on create when empty; null on edit when emptied
+    // (null clears it, and many products can have no barcode).
+    barcode: optionalField(form.barcode, isEdit),
     categoryId: form.categoryId,
     primaryItemUnitId: form.primaryItemUnitId,
     itemType: form.itemType,
@@ -39,21 +43,12 @@ export async function getItemUnits() {
 }
 
 export async function createProduct(form) {
-  const body = toProductBody(form);
-  // barcode is UNIQUE: "" would clash between two products, so an empty barcode is left out.
-  const barcode = form.barcode.trim();
-  if (barcode) body.barcode = barcode;
-
-  const response = await api.post("/products", body);
+  const response = await api.post("/products", toProductBody(form, false));
   return response.data.data;
 }
 
 export async function updateProduct(id, form) {
-  const body = toProductBody(form);
-  // barcode is UNIQUE: send null (not "") when emptied, so many products can have no barcode.
-  body.barcode = form.barcode.trim() || null;
-
-  const response = await api.patch(`/products/${id}`, body);
+  const response = await api.patch(`/products/${id}`, toProductBody(form, true));
   return response.data.data;
 }
 

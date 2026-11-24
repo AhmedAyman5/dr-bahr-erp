@@ -4,6 +4,7 @@
 //   supplier = null → add mode, supplier = object → edit mode.
 import { useState } from "react";
 import Alert from "../../../components/ui/Alert";
+import BalancePreview from "../../../components/ui/BalancePreview";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Modal from "../../../components/ui/Modal";
@@ -53,8 +54,8 @@ function SupplierFormModal({ supplier, onClose, onSaved }) {
     const email = form.email.trim();
     if (email && !EMAIL_PATTERN.test(email)) errors.email = "البريد الإلكتروني غير صحيح";
 
-    // Same range as the backend: opening balance ≥ 0.
-    const openingBalanceError = validateMoney(form.openingBalance, { min: 0 });
+    // Same range as the backend: the opening balance may be negative (the supplier owes us).
+    const openingBalanceError = validateMoney(form.openingBalance);
     if (openingBalanceError) errors.openingBalance = openingBalanceError;
 
     setFieldErrors(errors);
@@ -126,15 +127,19 @@ function SupplierFormModal({ supplier, onClose, onSaved }) {
           error={fieldErrors.email}
         />
         <Input label="الرقم الضريبي" name="taxNumber" dir="ltr" value={form.taxNumber} onChange={handleChange} />
-        <Input
-          label="الرصيد الافتتاحي"
-          name="openingBalance"
-          inputMode="decimal"
-          dir="ltr"
-          value={form.openingBalance}
-          onChange={handleChange}
-          error={fieldErrors.openingBalance}
-        />
+        <div>
+          <Input
+            label="الرصيد الافتتاحي"
+            name="openingBalance"
+            inputMode="decimal"
+            dir="ltr"
+            value={form.openingBalance}
+            onChange={handleChange}
+            error={fieldErrors.openingBalance}
+          />
+          {/* Hint + live preview: "سيتم تسجيله: 500.00 مدين — لنا عند المورد" */}
+          <BalancePreview value={form.openingBalance} party="supplier" />
+        </div>
       </form>
     </Modal>
   );

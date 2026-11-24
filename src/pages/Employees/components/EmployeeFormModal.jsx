@@ -61,11 +61,6 @@ function EmployeeFormModal({ employee, branches, defaultBranchId = "", onClose, 
       errors.nationalId = "الرقم القومي يجب أن يكون 14 رقماً";
     }
 
-    // The backend cannot clear a saved hire date, only change it.
-    if (initialForm.hireDate && !form.hireDate) {
-      errors.hireDate = "لا يمكن حذف تاريخ التعيين بعد حفظه، يمكنك تعديله فقط";
-    }
-
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   }
@@ -153,14 +148,7 @@ function EmployeeFormModal({ employee, branches, defaultBranchId = "", onClose, 
           error={fieldErrors.nationalId}
         />
         <Input label="الوظيفة" name="jobTitle" value={form.jobTitle} onChange={handleChange} />
-        <Input
-          label="تاريخ التعيين"
-          name="hireDate"
-          type="date"
-          value={form.hireDate}
-          onChange={handleChange}
-          error={fieldErrors.hireDate}
-        />
+        <Input label="تاريخ التعيين" name="hireDate" type="date" value={form.hireDate} onChange={handleChange} />
       </form>
     </Modal>
   );

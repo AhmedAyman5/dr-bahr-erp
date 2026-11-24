@@ -2,7 +2,7 @@
 // The API returns only employeeId / branchId, so names come from the employees and branches
 // lists (loaded together with the users).
 // The logged-in user is marked "(أنت)" and cannot delete their own account.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
@@ -14,6 +14,8 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getUser, updateSessionUser } from "../../services/session";
 import { getErrorMessage } from "../../utils/errors";
 import { formatDateTime } from "../../utils/format";
@@ -21,21 +23,25 @@ import { getLabel, ROLES } from "../../utils/labels";
 import { deleteUser, getBranches, getEmployees, getUsers } from "./usersApi";
 import UserFormModal from "./components/UserFormModal";
 
-const SUCCESS_HIDE_MS = 4000;
+// The users, employees and branches (for names, filters and the form), loaded together.
+async function loadPageData() {
+  const [users, employees, branches] = await Promise.all([getUsers(), getEmployees(), getBranches()]);
+  return { users, employees, branches };
+}
 
 function Users() {
-  // List (+ employees and branches for names, filters and the form)
-  const [users, setUsers] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List (+ employees and branches for names, filters and the form): loaded on mount.
+  // reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(loadPageData);
+  const users = data?.users ?? [];
+  const employees = data?.employees ?? [];
+  const branches = data?.branches ?? [];
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState(""); // "" = all roles
   const [branchFilter, setBranchFilter] = useState(""); // "" = all branches
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: userToEdit = null → add mode
@@ -49,42 +55,9 @@ function Users() {
   // The logged-in user (only the id is used, it never changes).
   const currentUserId = getUser()?.id;
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadData() {
-    setLoading(true);
-    setError("");
-    try {
-      const [usersData, employeesData, branchesData] = await Promise.all([
-        getUsers(),
-        getEmployees(),
-        getBranches(),
-      ]);
-      setUsers(usersData);
-      setEmployees(employeesData);
-      setBranches(branchesData);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -109,7 +82,7 @@ function Users() {
     }
     closeForm();
     showSuccess(message);
-    loadData();
+    refresh();
   }
 
   async function handleDelete() {
@@ -118,13 +91,13 @@ function Users() {
       await deleteUser(userToDelete.id);
       showSuccess("تم حذف المستخدم بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setUserToDelete(null);
     }
-    loadData();
+    refresh();
   }
 
   // Name by id; undefined when the record is not in the list (deleted).
@@ -252,7 +225,7 @@ function Users() {
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل المستخدمين..." />;
-    if (error) return <ErrorState message={error} onRetry={loadData} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (users.length === 0) {
       return <EmptyState message="لا يوجد مستخدمين بعد" action={renderAddButton()} />;
     }
@@ -298,13 +271,18 @@ function Users() {
       <PageHeader title="المستخدمين" subtitle="حسابات الدخول على النظام وصلاحياتها" action={renderAddButton()} />
 
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 
@@ -319,6 +297,7 @@ function Users() {
           currentUserId={currentUserId}
           onClose={closeForm}
           onSaved={handleSaved}
+          onRefreshLists={refresh}
         />
       )}
 

@@ -1,7 +1,7 @@
 // Employees (الموظفين) — list page, same structure as pages/Inventories.
 // Every employee belongs to a branch; the API returns only branchId, so the branch
 // names come from the branches list (loaded together with the employees).
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
@@ -14,12 +14,12 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatDate } from "../../utils/format";
 import { deleteEmployee, getBranches, getEmployees } from "./employeesApi";
 import EmployeeFormModal from "./components/EmployeeFormModal";
-
-const SUCCESS_HIDE_MS = 4000;
 
 // Case-insensitive search in code, name, national ID and job title.
 function matchesSearch(employee, search) {
@@ -37,17 +37,23 @@ function formatHireDate(value) {
   return formatDate(`${value.slice(0, 10)}T00:00:00`);
 }
 
+// The employees and the branches (for their names, the filter and the form), loaded together.
+async function loadPageData() {
+  const [employees, branches] = await Promise.all([getEmployees(), getBranches()]);
+  return { employees, branches };
+}
+
 function Employees() {
-  // List (+ branches for names, filter and form)
-  const [employees, setEmployees] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List (+ branches for names, filter and form): loaded on mount.
+  // reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(loadPageData);
+  const employees = data?.employees ?? [];
+  const branches = data?.branches ?? [];
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState(""); // "" = all branches
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: employeeToEdit = null → add mode
@@ -58,37 +64,9 @@ function Employees() {
   const [employeeToDelete, setEmployeeToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadData() {
-    setLoading(true);
-    setError("");
-    try {
-      const [employeesData, branchesData] = await Promise.all([getEmployees(), getBranches()]);
-      setEmployees(employeesData);
-      setBranches(branchesData);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -109,7 +87,7 @@ function Employees() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadData();
+    refresh();
   }
 
   async function handleDelete() {
@@ -118,13 +96,13 @@ function Employees() {
       await deleteEmployee(employeeToDelete.id);
       showSuccess("تم حذف الموظف بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setEmployeeToDelete(null);
     }
-    loadData();
+    refresh();
   }
 
   // Branch name by id; undefined when the branch is not in the list (deleted).
@@ -169,7 +147,7 @@ function Employees() {
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل الموظفين..." />;
-    if (error) return <ErrorState message={error} onRetry={loadData} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (employees.length === 0) {
       return <EmptyState message="لا يوجد موظفين بعد" action={renderAddButton()} />;
     }
@@ -240,13 +218,18 @@ function Employees() {
         </Alert>
       )}
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 

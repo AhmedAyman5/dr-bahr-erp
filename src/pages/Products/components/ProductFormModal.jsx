@@ -2,9 +2,10 @@
 // Usage (render it only while open, so the form starts fresh every time):
 //   {formOpen && (
 //     <ProductFormModal product={productToEdit} categories={categories} units={units}
-//       onClose={closeForm} onSaved={handleSaved} />
+//       onClose={closeForm} onSaved={handleSaved} onRefreshLists={refresh} />
 //   )}
 //   product = null → add mode, product = object → edit mode.
+//   onRefreshLists() reloads the category / unit lists silently (called when a chosen one was deleted).
 import { useState } from "react";
 import Alert from "../../../components/ui/Alert";
 import Button from "../../../components/ui/Button";
@@ -64,7 +65,7 @@ function FormSection({ title, children }) {
   );
 }
 
-function ProductFormModal({ product, categories, units, onClose, onSaved }) {
+function ProductFormModal({ product, categories, units, onClose, onSaved, onRefreshLists }) {
   const isEdit = Boolean(product);
   const initialForm = getInitialForm(product);
 
@@ -120,6 +121,13 @@ function ProductFormModal({ product, categories, units, onClose, onSaved }) {
     } catch (err) {
       // Keep the typed data so the user can fix it and try again.
       setError(getErrorMessage(err));
+      // The chosen category / unit was deleted meanwhile: clear that choice and reload the lists,
+      // so the deleted one disappears from the Select.
+      const { code, field } = err.response?.data || {};
+      if (code === "DOES_NOT_EXIST" && (field === "categoryId" || field === "primaryItemUnitId")) {
+        setForm({ ...form, [field]: "" });
+        onRefreshLists();
+      }
       setSaving(false);
     }
   }

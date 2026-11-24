@@ -1,8 +1,9 @@
 // Suppliers (الموردين) — list + add / edit / delete. Same structure as pages/Branches.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
+import BalanceCell from "../../components/ui/BalanceCell";
 import Button from "../../components/ui/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import DataTable from "../../components/ui/DataTable";
@@ -10,14 +11,14 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
-import { formatMoney } from "../../utils/format";
 import { deleteSupplier, getSuppliers } from "./suppliersApi";
 import SupplierFormModal from "./components/SupplierFormModal";
 
-const SUCCESS_HIDE_MS = 4000;
-
-// dir="ltr" keeps phone numbers, emails and money the right way round in RTL.
+// dir="ltr" keeps phone numbers and emails the right way round in RTL.
+// The opening balance shows the amount + "مدين" / "دائن" and its meaning (see BalanceCell).
 const COLUMNS = [
   { key: "code", label: "الكود" },
   { key: "name", label: "الاسم" },
@@ -27,7 +28,7 @@ const COLUMNS = [
   {
     key: "openingBalance",
     label: "الرصيد الافتتاحي",
-    render: (row) => <span dir="ltr">{formatMoney(row.openingBalance)}</span>,
+    render: (row) => <BalanceCell value={row.openingBalance} party="supplier" />,
   },
 ];
 
@@ -41,14 +42,13 @@ function matchesSearch(supplier, search) {
 }
 
 function Suppliers() {
-  // List
-  const [suppliers, setSuppliers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List: loaded on mount. reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(getSuppliers);
+  const suppliers = data ?? [];
   const [search, setSearch] = useState("");
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: supplierToEdit = null → add mode
@@ -59,35 +59,9 @@ function Suppliers() {
   const [supplierToDelete, setSupplierToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadSuppliers() {
-    setLoading(true);
-    setError("");
-    try {
-      setSuppliers(await getSuppliers());
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadSuppliers();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -108,7 +82,7 @@ function Suppliers() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadSuppliers();
+    refresh();
   }
 
   async function handleDelete() {
@@ -117,20 +91,20 @@ function Suppliers() {
       await deleteSupplier(supplierToDelete.id);
       showSuccess("تم حذف المورد بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setSupplierToDelete(null);
     }
-    loadSuppliers();
+    refresh();
   }
 
   const filteredSuppliers = suppliers.filter((supplier) => matchesSearch(supplier, search));
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل الموردين..." />;
-    if (error) return <ErrorState message={error} onRetry={loadSuppliers} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (suppliers.length === 0) {
       return (
         <EmptyState
@@ -204,13 +178,18 @@ function Suppliers() {
       />
 
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 

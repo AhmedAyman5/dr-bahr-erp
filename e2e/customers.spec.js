@@ -14,6 +14,7 @@ import {
   apiLogin,
   createByApi,
   deleteByTag,
+  expectBalanceCell,
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
@@ -119,7 +120,7 @@ test.describe("with backend", () => {
     await expect(cells.nth(COL.code)).toHaveText(/^CUS-\d+$/);
     await expect(cells.nth(COL.phone)).toHaveText("01001234567");
     await expect(cells.nth(COL.creditLimit)).toHaveText("1,500.00");
-    await expect(cells.nth(COL.openingBalance)).toHaveText("1,234,567.50");
+    await expectBalanceCell(cells.nth(COL.openingBalance), "1,234,567.50", "مدين", "على العميل لنا");
 
     await expect(success).toBeHidden({ timeout: 7000 });
   });
@@ -139,32 +140,68 @@ test.describe("with backend", () => {
     );
     await dialog.getByRole("button", { name: "حفظ" }).click();
     const body = (await requestPromise).postDataJSON();
-    expect(body.creditLimit).toBe(0);
-    expect(body.openingBalance).toBe(0);
+    // Empty optional text fields are left out on create; empty money is 0 (never null).
+    expect(body).toEqual({ name, creditLimit: 0, openingBalance: 0 });
 
     const cells = rowWith(page, name).getByRole("cell");
     await expect(cells.nth(COL.creditLimit)).toHaveText("0.00");
-    await expect(cells.nth(COL.openingBalance)).toHaveText("0.00");
+    // 0 → the amount only, no مدين / دائن badge.
+    await expectBalanceCell(cells.nth(COL.openingBalance), "0.00");
     await expect(cells.nth(COL.phone)).toHaveText("-");
   });
 
-  test("a negative opening balance (-250.5) is accepted and shown as -250.50", async ({ page }) => {
-    const name = `عميل مدين ${tag}`;
+  test("opening balance −250.50 → 250.50 دائن (للعميل علينا); +100 → مدين (على العميل لنا)", async ({ page }) => {
+    const cases = [
+      { typed: "-250.50", sent: -250.5, amount: "250.50", label: "دائن", meaning: "للعميل علينا" },
+      { typed: "100", sent: 100, amount: "100.00", label: "مدين", meaning: "على العميل لنا" },
+    ];
+    await page.goto("/customers");
+
+    for (const [index, item] of cases.entries()) {
+      const name = `عميل رصيد ${index} ${tag}`;
+      await page.getByRole("button", { name: "إضافة عميل" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة عميل" });
+      await dialog.getByLabel("الاسم").fill(name);
+      await dialog.getByLabel("الرصيد الافتتاحي").fill(item.typed);
+      await expect(dialog.getByText(`سيتم تسجيله: ${item.amount} ${item.label} — ${item.meaning}`)).toBeVisible();
+
+      const requestPromise = page.waitForRequest(
+        (req) => req.url() === `${API_URL}/customer` && req.method() === "POST",
+      );
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      expect((await requestPromise).postDataJSON().openingBalance).toBe(item.sent);
+
+      await expect(dialog).toBeHidden();
+      const cell = rowWith(page, name).getByRole("cell").nth(COL.openingBalance);
+      await expectBalanceCell(cell, item.amount, item.label, item.meaning);
+    }
+  });
+
+  test("form: the opening balance preview updates while typing and hides for 0, empty and invalid", async ({
+    page,
+  }) => {
     await page.goto("/customers");
     await page.getByRole("button", { name: "إضافة عميل" }).first().click();
     const dialog = page.getByRole("dialog", { name: "إضافة عميل" });
+    const balance = dialog.getByLabel("الرصيد الافتتاحي");
+    const preview = dialog.getByText("سيتم تسجيله:");
 
-    await dialog.getByLabel("الاسم").fill(name);
-    await dialog.getByLabel("الرصيد الافتتاحي").fill("-250.5");
+    // The hint is always there; the preview starts hidden (the field starts at 0).
+    await expect(dialog.getByText("اكتب الرقم موجب لو العميل عليه فلوس، وسالب لو له فلوس عندنا")).toBeVisible();
+    await expect(balance).toHaveValue("0");
+    await expect(preview).toHaveCount(0);
 
-    const requestPromise = page.waitForRequest(
-      (req) => req.url() === `${API_URL}/customer` && req.method() === "POST",
-    );
-    await dialog.getByRole("button", { name: "حفظ" }).click();
-    expect((await requestPromise).postDataJSON().openingBalance).toBe(-250.5);
+    // Typed character by character: the preview follows every keystroke.
+    await balance.fill("");
+    await balance.pressSequentially("-250.5");
+    await expect(preview).toHaveText("سيتم تسجيله: 250.50 دائن — للعميل علينا");
+    await balance.fill("1500");
+    await expect(preview).toHaveText("سيتم تسجيله: 1,500.00 مدين — على العميل لنا");
 
-    await expect(page.getByRole("alert").filter({ hasText: "تمت إضافة العميل بنجاح" })).toBeVisible();
-    await expect(rowWith(page, name).getByRole("cell").nth(COL.openingBalance)).toHaveText("-250.50");
+    for (const value of ["0", "", "abc", "10.555"]) {
+      await balance.fill(value);
+      await expect(preview).toHaveCount(0);
+    }
   });
 
   test("validation: name, 3 decimals and a negative credit limit show Arabic errors and send no request", async ({
@@ -224,10 +261,16 @@ test.describe("with backend", () => {
     await expect(page.getByText("عدد العملاء: 0")).toBeVisible();
   });
 
-  test('edit: fields are prefilled, clearing the phone sends "" and shows "-"', async ({ page, request }) => {
+  test("edit: fields are prefilled; emptying phone, tax number, record and address sends null and clears them", async ({
+    page,
+    request,
+  }) => {
     const customer = await createByApi(request, token, "/customer", {
       name: `عميل قديم ${tag}`,
       phone: "0501234567",
+      taxNumber: "300123456700003",
+      commercialRecord: "1010123456",
+      address: "القاهرة",
       creditLimit: 10000,
       openingBalance: 1500.5,
     });
@@ -247,7 +290,9 @@ test.describe("with backend", () => {
     await expect(dialog.getByLabel("الرصيد الافتتاحي")).toHaveValue("1500.5");
 
     await dialog.getByLabel("الاسم").fill(newName);
-    await dialog.getByLabel("الهاتف").fill("");
+    for (const label of ["الهاتف", "الرقم الضريبي", "السجل التجاري", "العنوان"]) {
+      await dialog.getByLabel(label).fill("");
+    }
     await dialog.getByLabel("الحد الائتماني").fill("20000.75");
 
     const requestPromise = page.waitForRequest(
@@ -255,9 +300,15 @@ test.describe("with backend", () => {
     );
     await dialog.getByRole("button", { name: "حفظ" }).click();
     const body = (await requestPromise).postDataJSON();
-    expect(body.phone).toBe("");
-    expect(body.creditLimit).toBe(20000.75);
-    expect(body).not.toHaveProperty("code");
+    expect(body).toEqual({
+      name: newName,
+      phone: null,
+      taxNumber: null,
+      commercialRecord: null,
+      address: null,
+      creditLimit: 20000.75,
+      openingBalance: 1500.5,
+    });
 
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل العميل بنجاح" })).toBeVisible();
@@ -265,8 +316,19 @@ test.describe("with backend", () => {
     await expect(cells.nth(COL.code)).toHaveText(customer.code);
     await expect(cells.nth(COL.phone)).toHaveText("-");
     await expect(cells.nth(COL.creditLimit)).toHaveText("20,000.75");
-    await expect(cells.nth(COL.openingBalance)).toHaveText("1,500.50");
+    await expectBalanceCell(cells.nth(COL.openingBalance), "1,500.50", "مدين", "على العميل لنا");
     await expect(rowWith(page, customer.name)).toHaveCount(0);
+
+    // The API agrees: the four fields are really cleared (null, not "").
+    const response = await request.get(`${API_URL}/customer/${customer.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect((await response.json()).data).toMatchObject({
+      phone: null,
+      taxNumber: null,
+      commercialRecord: null,
+      address: null,
+    });
   });
 
   test('delete: "إلغاء" keeps the customer, "حذف العميل" removes it', async ({ page, request }) => {
@@ -399,7 +461,7 @@ test.describe("mocked API", () => {
       await expect(cells.nth(COL.code)).toHaveText("CUS-000001");
       await expect(cells.nth(COL.phone)).toHaveText("-");
       await expect(cells.nth(COL.creditLimit)).toHaveText("1,500.00");
-      await expect(cells.nth(COL.openingBalance)).toHaveText("-250.50");
+      await expectBalanceCell(cells.nth(COL.openingBalance), "250.50", "دائن", "للعميل علينا");
       await expect(page.getByText("عدد العملاء: 1")).toBeVisible();
     });
   });

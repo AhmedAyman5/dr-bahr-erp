@@ -1,6 +1,6 @@
 // Branches (الفروع) — the reference CRUD list page.
 // New list pages copy this structure: list + <page>Api.js + components/<Name>FormModal.jsx.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
@@ -11,12 +11,12 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
+import useAutoHideMessage from "../../hooks/useAutoHideMessage";
+import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
 import { formatDate } from "../../utils/format";
 import { deleteBranch, getBranches } from "./branchesApi";
 import BranchFormModal from "./components/BranchFormModal";
-
-const SUCCESS_HIDE_MS = 4000;
 
 const COLUMNS = [
   { key: "code", label: "الكود" },
@@ -35,14 +35,13 @@ function matchesSearch(branch, search) {
 }
 
 function Branches() {
-  // List
-  const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // List: loaded on mount. reload() = retry (shows LoadingState), refresh() = silent (after add / edit / delete).
+  const { data, loading, error, refreshError, reload, refresh } = useLoadData(getBranches);
+  const branches = data ?? [];
   const [search, setSearch] = useState("");
 
-  // Messages after an action
-  const [successMessage, setSuccessMessage] = useState("");
+  // Messages after an action (the success message hides by itself)
+  const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
   // Add / edit form: branchToEdit = null → add mode
@@ -53,35 +52,9 @@ function Branches() {
   const [branchToDelete, setBranchToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Used for the first load, the retry button and after every add / edit / delete.
-  async function loadBranches() {
-    setLoading(true);
-    setError("");
-    try {
-      setBranches(await getBranches());
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // Loading data on mount is the normal use of an effect; the lint rule cannot tell.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadBranches();
-  }, []);
-
-  // Hide the success message by itself after a few seconds.
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = setTimeout(() => setSuccessMessage(""), SUCCESS_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [successMessage]);
-
   function showSuccess(message) {
     setActionError("");
-    setSuccessMessage(message);
+    showSuccessMessage(message);
   }
 
   function openAdd() {
@@ -102,7 +75,7 @@ function Branches() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
-    loadBranches();
+    refresh();
   }
 
   async function handleDelete() {
@@ -111,20 +84,20 @@ function Branches() {
       await deleteBranch(branchToDelete.id);
       showSuccess("تم حذف الفرع بنجاح");
     } catch (err) {
-      setSuccessMessage("");
+      hideSuccessMessage();
       setActionError(getErrorMessage(err));
     } finally {
       setDeleting(false);
       setBranchToDelete(null);
     }
-    loadBranches();
+    refresh();
   }
 
   const filteredBranches = branches.filter((branch) => matchesSearch(branch, search));
 
   function renderContent() {
     if (loading) return <LoadingState message="جارٍ تحميل الفروع..." />;
-    if (error) return <ErrorState message={error} onRetry={loadBranches} />;
+    if (error) return <ErrorState message={error} onRetry={reload} />;
     if (branches.length === 0) {
       return (
         <EmptyState
@@ -194,13 +167,18 @@ function Branches() {
       />
 
       {successMessage && (
-        <Alert type="success" className="mb-4" onClose={() => setSuccessMessage("")}>
+        <Alert type="success" className="mb-4" onClose={hideSuccessMessage}>
           {successMessage}
         </Alert>
       )}
       {actionError && (
         <Alert type="error" className="mb-4" onClose={() => setActionError("")}>
           {actionError}
+        </Alert>
+      )}
+      {refreshError && (
+        <Alert type="error" className="mb-4">
+          {refreshError}
         </Alert>
       )}
 
