@@ -63,3 +63,49 @@ export async function updateProduct(id, form) {
 export async function deleteProduct(id) {
   await api.delete(`/products/${id}`);
 }
+
+// ---- Product units (وحدات الصنف): ../backend/doc/week2/product-units.txt ----
+// "1 كرتونة = 24 قطعة": factor = how many PRIMARY units one other unit holds.
+
+// Only the documented fields. itemUnitId is sent on create only: on edit the unit is read-only
+// (to change it the user deletes the row and adds the new unit).
+// barcode / retailPrice are optional: left out on create when empty; null on edit when emptied
+// (null clears them). factor is required: always a number.
+function toProductUnitBody(form, isEdit) {
+  const retailPriceText = form.retailPrice.trim();
+  let retailPrice = toMoneyNumber(retailPriceText, DECIMALS);
+  if (retailPriceText === "") retailPrice = isEdit ? null : undefined;
+
+  return {
+    itemUnitId: isEdit ? undefined : form.itemUnitId,
+    factor: toMoneyNumber(form.factor, DECIMALS),
+    barcode: optionalField(form.barcode, isEdit),
+    retailPrice,
+  };
+}
+
+// The primary unit FIRST (isPrimary: true, id null, the product's barcode / price), then the
+// other units by factor.
+export async function getProductUnits(productId) {
+  const response = await api.get(`/products/${productId}/units`);
+  return response.data.data;
+}
+
+// Returns { productUnit, restored }. The server answers 201 in both cases; only its message tells
+// that a unit deleted before came back ("Product unit restored successfully"), so the page can say so.
+export async function createProductUnit(productId, form) {
+  const response = await api.post(`/products/${productId}/units`, toProductUnitBody(form, false));
+  return {
+    productUnit: response.data.data,
+    restored: /restored/i.test(response.data.message || ""),
+  };
+}
+
+export async function updateProductUnit(id, form) {
+  const response = await api.patch(`/product-units/${id}`, toProductUnitBody(form, true));
+  return response.data.data;
+}
+
+export async function deleteProductUnit(id) {
+  await api.delete(`/product-units/${id}`);
+}

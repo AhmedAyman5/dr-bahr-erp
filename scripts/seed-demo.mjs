@@ -4,7 +4,7 @@
 // database directly), so the whole system can be tried without typing data.
 //
 // Safe to run many times (idempotent): every record is first looked up by a natural key
-// (name / currency code / national ID / username); only what is missing is created and the
+// (name / currency code / national ID / username / product + unit); only what is missing is created and the
 // existing ids are reused. Opening stock is added only when the product is not in that
 // warehouse yet. The script NEVER edits or deletes anything, and never touches EGP or the
 // admin account.
@@ -139,6 +139,27 @@ const PRODUCTS = [
   // خدمات (SERVICE: no stock)
   { name: "خدمة توصيل", category: "خدمات", unit: "قطعة", prices: [150, 125, 100], reorder: 0, service: true },
   { name: "خدمة تركيب", category: "خدمات", unit: "قطعة", prices: [300, 250, 200], reorder: 0, service: true },
+];
+
+// Product units (وحدات الصنف, Week 2): "1 كرتونة = 24 قطعة". factor = how many PRIMARY units one
+// unit holds (the product's primary unit is never added here). price = the unit's own retail price,
+// a bit LOWER than piece price × factor (buying a carton is cheaper). barcode: true → a random barcode.
+// Only STOCK products; many STOCK products are left without units on purpose.
+const PRODUCT_UNITS = [
+  { product: "معجون أسنان 100 مل", units: [
+    { unit: "كرتونة", factor: 24, price: 1000, barcode: true }, // 45 × 24 = 1080
+    { unit: "دستة", factor: 12, price: 520 }, //                   45 × 12 = 540
+  ] },
+  { product: "مياه معدنية 1.5 لتر", units: [{ unit: "كرتونة", factor: 6, price: 45, barcode: true }] }, // 8 × 6 = 48
+  { product: "أرز 5 كيلو", units: [{ unit: "كرتونة", factor: 4, price: 680 }] }, // primary قطعة: 175 × 4 = 700
+  { product: "مسحوق غسيل أوتوماتيك 3 كيلو", units: [{ unit: "كرتونة", factor: 6, price: 1650, barcode: true }] }, // 1710
+  { product: "كلور 1 لتر", units: [{ unit: "كرتونة", factor: 12, price: 250 }] }, // 22 × 12 = 264
+  { product: "صابون استحمام 125 جم", units: [
+    { unit: "دستة", factor: 12, price: 280 }, // 25 × 12 = 300
+    { unit: "كرتونة", factor: 72 }, //          no own price
+  ] },
+  { product: "شاي 250 جم", units: [{ unit: "كرتونة", factor: 20, price: 1820, barcode: true }] }, // primary علبة: 1900
+  { product: "سكر 1 كيلو", units: [{ unit: "شوال", factor: 50, price: 1650 }] }, // primary كيلو: 35 × 50 = 1750
 ];
 
 // Customers: openingBalance + = مدين (على العميل لنا), − = دائن (للعميل علينا), 0 = none.
@@ -369,6 +390,34 @@ async function seedOpeningStock(warehouses, products) {
   }
 }
 
+// Product units: looked up by product + item unit (GET /products/:id/units) before creating.
+async function seedProductUnits(products, units) {
+  for (const entry of PRODUCT_UNITS) {
+    const product = products.get(entry.product);
+    if (!product || product.itemType !== "STOCK") {
+      count("product units", "skipped", `${entry.product}: product missing or not STOCK`);
+      continue;
+    }
+    const existingUnitIds = new Set((await get(`/products/${product.id}/units`)).map((row) => row.itemUnitId));
+    for (const productUnit of entry.units) {
+      const unit = units.get(productUnit.unit);
+      if (!unit) {
+        count("product units", "skipped", `${entry.product} / ${productUnit.unit}: item unit missing`);
+        continue;
+      }
+      // Also the primary unit (always in the list) is never added.
+      if (existingUnitIds.has(unit.id)) {
+        count("product units", "existed");
+        continue;
+      }
+      const body = { itemUnitId: unit.id, factor: productUnit.factor };
+      if (productUnit.price !== undefined) body.retailPrice = productUnit.price;
+      if (productUnit.barcode) body.barcode = randomBarcode();
+      await createOrSkip("product units", `${entry.product} / ${productUnit.unit}`, `/products/${product.id}/units`, body);
+    }
+  }
+}
+
 async function seedCustomers() {
   const existing = byName(await get("/customer"));
   for (const customer of CUSTOMERS) {
@@ -456,6 +505,7 @@ const MODULE_AR = {
   "item units": "وحدات الأصناف",
   products: "الأصناف",
   "opening stock": "أرصدة أول المدة",
+  "product units": "وحدات الصنف",
   customers: "العملاء",
   suppliers: "الموردين",
   employees: "الموظفين",
@@ -490,6 +540,7 @@ async function main() {
   const units = await seedSimpleNamed("item units", "/item-unit", ITEM_UNITS);
   const products = await seedProducts(categories, units);
   await seedOpeningStock(warehouses, products);
+  await seedProductUnits(products, units);
   await seedCustomers();
   await seedSuppliers();
   const employees = await seedEmployees(branches);

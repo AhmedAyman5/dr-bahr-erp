@@ -1,9 +1,10 @@
 // Products (الأصناف) — list page, same structure as pages/Branches.
 // Every product needs a category and a unit, so those lists are loaded together with the products
 // (for the category filter, the form Selects and the "add these first" hint).
+// Row action "الوحدات" opens ProductUnitsModal (وحدات الصنف, Week 2): not for SERVICE products.
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Boxes, Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
@@ -21,6 +22,7 @@ import { formatMoney } from "../../utils/format";
 import { ITEM_TYPES, getLabel } from "../../utils/labels";
 import { deleteProduct, getCategories, getItemUnits, getProducts } from "./productsApi";
 import ProductFormModal from "./components/ProductFormModal";
+import ProductUnitsModal from "./components/ProductUnitsModal";
 
 // Prices are Decimal(18,4): show at least 2 and at most 4 decimals ("15" → "15.00").
 function renderPrice(value) {
@@ -89,6 +91,9 @@ function Products() {
   const [formOpen, setFormOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState(null);
 
+  // Product units (وحدات الصنف) of one product; null = closed.
+  const [unitsProduct, setUnitsProduct] = useState(null);
+
   // Delete
   const [productToDelete, setProductToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -116,6 +121,14 @@ function Products() {
   function handleSaved(message) {
     closeForm();
     showSuccess(message);
+    refresh();
+  }
+
+  // The product was deleted meanwhile (the units modal got a 404): close it and refresh the list.
+  function handleProductMissing() {
+    setUnitsProduct(null);
+    hideSuccessMessage();
+    setActionError("الصنف غير موجود أو محذوف");
     refresh();
   }
 
@@ -203,6 +216,17 @@ function Products() {
             rows={filteredProducts}
             renderActions={(product) => (
               <>
+                {/* SERVICE products have no packing units (no stock). */}
+                <Button
+                  variant="ghost"
+                  className="px-2"
+                  title={product.itemType === "SERVICE" ? "الخدمات ليس لها وحدات تعبئة" : "الوحدات"}
+                  aria-label={`وحدات ${product.name}`}
+                  disabled={product.itemType === "SERVICE"}
+                  onClick={() => setUnitsProduct(product)}
+                >
+                  <Boxes size={16} />
+                </Button>
                 <Button
                   variant="ghost"
                   className="px-2"
@@ -278,6 +302,14 @@ function Products() {
           onClose={closeForm}
           onSaved={handleSaved}
           onRefreshLists={refresh}
+        />
+      )}
+
+      {unitsProduct && (
+        <ProductUnitsModal
+          product={unitsProduct}
+          onClose={() => setUnitsProduct(null)}
+          onProductMissing={handleProductMissing}
         />
       )}
 

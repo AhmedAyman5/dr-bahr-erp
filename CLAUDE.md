@@ -29,8 +29,9 @@ npm run seed:demo  # demo data (بيانات تجربة) through the API — run
 Backend (Ahmed runs it, from `../backend`): `docker compose up -d` → API on `http://localhost:3000`. This local Docker backend is the ONLY backend (no production server yet).
 Default local login: `admin` / `admin123` (SUPERADMIN).
 Demo data (`scripts/seed-demo.mjs`): a realistic company (branches, warehouses, products + opening stock, customers,
-suppliers, employees, USD / EUR, 4 users with password `Demo@123`). Idempotent: it only creates what is missing
-(looked up by name / code / national ID / username), never edits or deletes, never touches EGP or `admin`.
+suppliers, employees, USD / EUR, product units (كرتونة / دستة / شوال on 8 STOCK products), 4 users with password
+`Demo@123`). Idempotent: it only creates what is missing
+(looked up by name / code / national ID / username / product + unit), never edits or deletes, never touches EGP or `admin`.
 
 ---
 
@@ -343,6 +344,8 @@ The backend does NOT prevent these yet, so the frontend must keep blocking them:
   the note "لا يمكن تغيير الوحدة الأساسية بعد استخدام الصنف (له حركات مخزن أو وحدات)" (stock movements can't be
   known in advance: the backend's 400 covers them).
 - Item Units: the in-use delete message also covers product units.
+- Products: row action "الوحدات" (`Boxes`, disabled for SERVICE) → `ProductUnitsModal` (وحدات الصنف: "1 كرتونة = 24
+  قطعة"; the primary unit is the first, read-only row). Product-unit API functions live in `productsApi.js`.
 
 ### Errors — `utils/errors.js`
 
@@ -353,6 +356,9 @@ The backend does NOT prevent these yet, so the frontend must keep blocking them:
 - `CODE_FIELD_AR` map: one exact message for a `"<code>:<field>"` pair (header fields only), e.g.
   `"BAD_REQUEST:primaryItemUnitId"`. A message that only makes sense on one form stays in that form
   (e.g. `VALIDATION_FAILED` + `reason` in ProductStock's `StockFormModal`, because returns also have a `reason`).
+- `LINE_CODE_FIELD_AR`: the same for a line field (key without `lines.N.`). Needed because one pair can mean two
+  things: `BAD_REQUEST` + `itemUnitId` = "the product's primary unit" on the product-units endpoints, but
+  `lines.N.itemUnitId` = "unit not defined for this product" in documents. Told apart by the field, never the message.
 - Line fields `"lines.N.<field>"` → "البند رقم N+1: <message with the label of <field>>". `getLineError(error)`
   → `{ lineIndex, field }` (or `null`) so a document form can highlight that row.
 - No response at all (server down / network) → "تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى".
@@ -392,7 +398,7 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | ------------------------------------------ | ----------------------------------------------------------------------------- |
 | `Button`                                   | variants: `primary`, `secondary`, `danger`, `danger-ghost`, `ghost`; `loading` prop |
 | `Input`, `Select`, `Textarea`              | form controls with `label`, `required`, `error`, `readOnly`                   |
-| `Modal`                                    | dialog shell: title, body, footer actions; unsaved-changes check (see below)  |
+| `Modal`                                    | dialog shell: title, body, footer actions; unsaved-changes check; `onCancel` (see below) |
 | `ConfirmDialog`                            | delete confirmations ("هل أنت متأكد من حذف ...؟")                             |
 | `DataTable`                                | simple table: `columns` + `rows` + optional actions column, horizontal scroll |
 | `SearchInput`                              | search box above tables                                                       |
@@ -415,6 +421,10 @@ Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title, sub
 - `cancelLabel="إلغاء"` → Modal renders the cancel button itself, so it gets the same check. Do not put your own cancel button in `footer`.
 - `closeDisabled={saving}` → X / إلغاء / Escape do nothing while a request is running.
 - The submit button lives in `footer` and is linked to the form with `type="submit" form="<form id>"`, so Enter in a field submits too. See `pages/Branches/components/BranchFormModal.jsx`.
+- **List + form inside ONE modal** (a list that belongs to one record, e.g. a product's units): never a modal on top of
+  a modal. The modal holds a `formOpen` view flag and the form state; in form view it passes `cancelLabel="رجوع"` +
+  `onCancel={backToList}` (the cancel button goes back to the list, X / Escape close the whole modal, both ask when
+  `dirty`). The list uses `useLoadData` + silent `refresh()` like a page. See `pages/Products/components/ProductUnitsModal.jsx`.
 
 Rules: pages never import or render `MainLayout`, Sidebar or Header. Add a new shared component only when a second page needs it; otherwise keep it in the page's `components/` folder.
 
@@ -517,7 +527,7 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
   Never assume an empty list or "the only branch / warehouse": empty states, "auto-select the single warehouse" and
   similar cases are tested with mocked API answers (`page.route`).
 - Leftover checks compare snapshots, never expect empty lists: `e2e/global-setup.js` snapshots every list (+ the
-  stock of every warehouse) before the run and fails the run if, after it, a record was left behind, or a record
+  stock of every warehouse, + the units of every product) before the run and fails the run if, after it, a record was left behind, or a record
   that existed before was deleted or modified (`updatedAt` / `lastLoginDate` ignored).
 - Playwright runs with `workers: 4` (more parallel browsers overload the machine: `ERR_INSUFFICIENT_RESOURCES`).
 - Never weaken, skip or delete a test to make it pass; fix the real cause.
@@ -533,6 +543,6 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
 | 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ✅     |
-| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ⏳ Product units, Stock movements + Item card, Purchase quotations, Purchase invoices, Purchase returns | ⏳     |
+| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ⏳ Stock movements + Item card, Purchase quotations, Purchase invoices, Purchase returns | ⏳     |
 
 Update this table when a page is finished.

@@ -2,7 +2,8 @@
 //
 // The database is NOT empty: it holds the demo data (npm run seed:demo) and EGP. So "no test data
 // left" can't mean "the lists are empty". Instead:
-//   1. before the run: take a snapshot of every list (+ the stock of every warehouse);
+//   1. before the run: take a snapshot of every list (+ the stock of every warehouse, + the product
+//      units of every product);
 //   2. after the run (the returned function = global teardown): take it again and compare.
 // The run fails when a test
 //   - left a record behind        (in "after", not in "before"),
@@ -48,8 +49,9 @@ async function getList(token, path) {
   return (await response.json()).data;
 }
 
-// { "<path>": Map(id → fingerprint) }. warehouseIds: whose stock to include (the "before" ones).
-async function takeSnapshot(warehouseIds) {
+// { "<path>": Map(id → fingerprint) }. warehouseIds / productIds: whose stock / units to include
+// (the "before" ones; left out → all current ones).
+async function takeSnapshot(warehouseIds, productIds) {
   const token = await login();
   const snapshot = {};
   for (const path of LISTS) {
@@ -61,6 +63,13 @@ async function takeSnapshot(warehouseIds) {
     // A warehouse deleted during the run is reported by the /inventory list itself.
     const records = snapshot["/inventory"].has(id) ? await getList(token, path) : [];
     snapshot[path] = new Map(records.map((record) => [record.id, fingerprint(record)]));
+  }
+  // Product units (Week 2). The primary unit entry has id null: key by itemUnitId (one row per unit).
+  for (const id of productIds ?? snapshot["/products"].keys()) {
+    const path = `/products/${id}/units`;
+    // A product deleted during the run is reported by the /products list itself.
+    const records = snapshot["/products"].has(id) ? await getList(token, path) : [];
+    snapshot[path] = new Map(records.map((record) => [record.itemUnitId, fingerprint(record)]));
   }
   return snapshot;
 }
@@ -100,7 +109,7 @@ export default async function globalSetup() {
 
   // Global teardown: runs once after all tests.
   return async () => {
-    const after = await takeSnapshot([...before["/inventory"].keys()]);
+    const after = await takeSnapshot([...before["/inventory"].keys()], [...before["/products"].keys()]);
     const problems = compare(before, after);
     if (problems.length > 0) {
       throw new Error(`[leftover check] the e2e run changed the database:\n  - ${problems.join("\n  - ")}`);

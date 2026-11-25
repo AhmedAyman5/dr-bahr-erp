@@ -21,6 +21,12 @@
 //     <form id="branch-form" onSubmit={handleSubmit}>...</form>
 //   </Modal>
 //
+// Usage (list + form inside ONE modal, e.g. pages/Products/components/ProductUnitsModal):
+//   the cancel button goes back to the list instead of closing: pass onCancel.
+//   <Modal open title="..." onClose={onClose} dirty={isDirty}
+//     cancelLabel="رجوع" onCancel={backToList} ...>
+//   X / Escape still close the whole modal; both paths get the same unsaved-changes check.
+//
 // Closes only with the X button, the cancel button or the Escape key.
 // Clicking the dark backdrop does NOT close it, so typed form data is never lost by mistake.
 // When `dirty` is true, closing first asks "تجاهل التغييرات" (a small confirm dialog). That is why
@@ -38,24 +44,28 @@ function Modal({
   size = "md",
   dirty = false,
   cancelLabel,
+  onCancel,
   closeDisabled = false,
 }) {
   const titleId = useId();
-  const [discardOpen, setDiscardOpen] = useState(false);
+  // What to do after "تجاهل التغييرات" (close, or onCancel). null = the discard dialog is closed.
+  const [pendingAction, setPendingAction] = useState(null);
+  const discardOpen = pendingAction !== null;
 
-  // X / cancel / Escape all go through here.
-  function requestClose() {
+  // X / cancel / Escape all go through here. action = onClose, or onCancel for the cancel button.
+  function requestClose(action = onClose) {
     if (closeDisabled) return;
     if (dirty) {
-      setDiscardOpen(true);
+      setPendingAction(() => action);
     } else {
-      onClose();
+      action();
     }
   }
 
   function handleDiscard() {
-    setDiscardOpen(false);
-    onClose();
+    const action = pendingAction;
+    setPendingAction(null);
+    action();
   }
 
   // Close with the Escape key. While the discard dialog is open, Escape belongs to it.
@@ -89,7 +99,7 @@ function Modal({
             </h2>
             <button
               type="button"
-              onClick={requestClose}
+              onClick={() => requestClose()}
               disabled={closeDisabled}
               className="rounded-lg p-1 text-slate-500 outline-none hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
               title="إغلاق"
@@ -105,7 +115,7 @@ function Modal({
             <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
               {footer}
               {cancelLabel && (
-                <Button variant="secondary" onClick={requestClose} disabled={closeDisabled}>
+                <Button variant="secondary" onClick={() => requestClose(onCancel ?? onClose)} disabled={closeDisabled}>
                   {cancelLabel}
                 </Button>
               )}
@@ -119,10 +129,10 @@ function Modal({
         open={discardOpen}
         title="تجاهل التغييرات"
         size="sm"
-        onClose={() => setDiscardOpen(false)}
+        onClose={() => setPendingAction(null)}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDiscardOpen(false)}>
+            <Button variant="secondary" onClick={() => setPendingAction(null)}>
               إلغاء
             </Button>
             <Button variant="danger" onClick={handleDiscard}>

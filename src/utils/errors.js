@@ -117,6 +117,20 @@ const CODE_FIELD_AR = {
   // Users: a deleted user keeps its employee / email, so they can't be reused yet.
   "BELONGS_TO_DELETED:employeeId": "هذا الموظف مرتبط بمستخدم محذوف",
   "BELONGS_TO_DELETED:email": "هذا البريد مرتبط بمستخدم محذوف",
+  // Product units (product-units.txt). On these endpoints BAD_REQUEST + itemUnitId only means "this is
+  // the product's primary unit". Its other meaning ("unit is not defined for this product") only comes
+  // from document lines, where the field is "lines.N.itemUnitId" → LINE_CODE_FIELD_AR below.
+  "BAD_REQUEST:itemUnitId": "هذه هي الوحدة الأساسية للصنف (معاملها 1) ولا يمكن إضافتها مرة أخرى",
+  "ALREADY_EXISTS:itemUnitId": "هذه الوحدة معرفة بالفعل لهذا الصنف",
+  "DOES_NOT_EXIST:itemUnitId": "الوحدة غير موجودة أو محذوفة",
+  "BELONGS_TO_DELETED:itemUnitId": "هذه الوحدة كانت مضافة وحُذفت، أضفها من جديد من زر إضافة وحدة",
+};
+
+// The same idea for a document line ("lines.N.<field>"): key "<code>:<field>" without "lines.N.".
+// The result gets the "البند رقم N+1: " prefix like every line error.
+const LINE_CODE_FIELD_AR = {
+  // The line's unit is neither the product's primary unit nor one of its product units.
+  "BAD_REQUEST:itemUnitId": "هذه الوحدة غير معرفة لهذا الصنف",
 };
 
 const UNKNOWN_FIELD_AR = "أحد الحقول";
@@ -155,8 +169,10 @@ export function getErrorMessage(error, options = {}) {
   const line = parseLineField(field);
   const fieldName = line ? line.field : field;
 
+  const lineSpecial = line ? LINE_CODE_FIELD_AR[`${code}:${fieldName}`] : undefined;
+
   const template = ERROR_AR[code] || ERROR_AR.INTERNAL_ERROR;
   const fieldLabel = FIELD_AR[fieldName] || UNKNOWN_FIELD_AR;
-  const message = template.replace("{field}", fieldLabel);
+  const message = lineSpecial || template.replace("{field}", fieldLabel);
   return line ? `البند رقم ${line.lineIndex + 1}: ${message}` : message;
 }

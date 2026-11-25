@@ -78,6 +78,22 @@ test.describe("getErrorMessage", () => {
     );
   });
 
+  test("product units: header itemUnitId vs a document line's itemUnitId (same code, two meanings)", () => {
+    // On the product-units endpoints (header field) BAD_REQUEST means "this is the primary unit".
+    expect(getErrorMessage(apiError("BAD_REQUEST", "itemUnitId"))).toBe(
+      "هذه هي الوحدة الأساسية للصنف (معاملها 1) ولا يمكن إضافتها مرة أخرى",
+    );
+    // In a document line it means "this unit is not defined for this product".
+    expect(getErrorMessage(apiError("BAD_REQUEST", "lines.1.itemUnitId"))).toBe(
+      "البند رقم 2: هذه الوحدة غير معرفة لهذا الصنف",
+    );
+    expect(getErrorMessage(apiError("ALREADY_EXISTS", "itemUnitId"))).toBe("هذه الوحدة معرفة بالفعل لهذا الصنف");
+    expect(getErrorMessage(apiError("DOES_NOT_EXIST", "itemUnitId"))).toBe("الوحدة غير موجودة أو محذوفة");
+    expect(getErrorMessage(apiError("BELONGS_TO_DELETED", "itemUnitId"))).toBe(
+      "هذه الوحدة كانت مضافة وحُذفت، أضفها من جديد من زر إضافة وحدة",
+    );
+  });
+
   test("unchanged basics: no response, login, unknown code", () => {
     expect(getErrorMessage(new Error("Network Error"))).toBe("تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى");
     expect(getErrorMessage(apiError("UNAUTHORIZED"), { context: "login" })).toBe("اسم المستخدم أو كلمة المرور غير صحيحة");
