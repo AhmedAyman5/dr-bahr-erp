@@ -6,6 +6,9 @@
 // refuses to delete a category / unit that an active product uses) — also when the test failed.
 // Barcodes are random every run: soft delete keeps a used barcode reserved forever.
 //
+// Week 2 tests also add product units (carton = 12) and put products in a tagged warehouse; afterEach
+// removes that stock first, and the tagged warehouses / branches last.
+//
 // "mocked API" tests fake /products, /categories and /item-unit with page.route (no backend needed).
 import {
   test,
@@ -36,6 +39,9 @@ const COL = {
 
 const PRICE_ORDER_WARNING =
   "تنبيه: المعتاد أن يكون سعر التجزئة ≥ سعر الجملة ≥ سعر جملة الجملة. راجع الأسعار قبل الحفظ.";
+// Week 2: the primary unit is locked once the product has stock movements or other units.
+const PRIMARY_UNIT_LOCKED = "لا يمكن تغيير الوحدة الأساسية بعد استخدام الصنف (له حركات مخزن أو وحدات)";
+const SERVICE_IN_WAREHOUSE = "لا يمكن تحويل الصنف إلى خدمي وهو موجود في مخزن";
 
 // The table row that contains this text.
 function rowWith(page, text) {
@@ -87,6 +93,50 @@ test.describe("with backend", () => {
     return response;
   }
 
+  // Week 2 product unit, e.g. carton = 12 pieces (POST /products/:productId/units).
+  function addProductUnitByApi(request, productId, itemUnitId, factor) {
+    return createByApi(request, token, `/products/${productId}/units`, { itemUnitId, factor });
+  }
+
+  // Puts the product in a new tagged warehouse (an OPENING stock movement).
+  async function putInWarehouseByApi(request, productId) {
+    const branch = await createByApi(request, token, "/branch", { name: `فرع أصناف ${tag}`, address: "عنوان" });
+    const warehouse = await createByApi(request, token, `/inventory/branch/${branch.id}`, {
+      name: `مخزن أصناف ${tag}`,
+      address: "عنوان",
+    });
+    await createByApi(request, token, `/product-inventory/inventory/${warehouse.id}`, {
+      productId,
+      quantity: 5,
+      costPrice: 2,
+    });
+  }
+
+  // Cleanup: stock records of the tagged warehouses (the backend adjusts them to 0, then removes them).
+  async function deleteTaggedStock(request) {
+    const headers = { Authorization: `Bearer ${token}` };
+    const response = await request.get(`${API_URL}/inventory`, { headers });
+    const warehouses = ((await response.json()).data || []).filter((item) => item.name.includes(tag));
+    for (const warehouse of warehouses) {
+      const stockResponse = await request.get(`${API_URL}/product-inventory/inventory/${warehouse.id}`, { headers });
+      for (const record of (await stockResponse.json()).data || []) {
+        await request.delete(`${API_URL}/product-inventory/${record.id}`, { headers });
+      }
+    }
+  }
+
+  // Opens the edit form and waits until its details (GET /products/:id, for the units) arrived.
+  async function openEdit(page, product) {
+    const detailsPromise = page.waitForResponse(
+      (res) => res.url() === `${API_URL}/products/${product.id}` && res.request().method() === "GET",
+    );
+    await page.getByRole("button", { name: `تعديل ${product.name}` }).click();
+    await detailsPromise;
+    const dialog = page.getByRole("dialog", { name: "تعديل الصنف" });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+
   // Opens the add form and fills the required fields.
   async function openAddAndFill(page, { name, retail = "15", wholesale = "12.5", bulk = "10" }) {
     await page.getByRole("button", { name: "إضافة صنف" }).first().click();
@@ -114,10 +164,13 @@ test.describe("with backend", () => {
 
   test.afterEach(async ({ request }) => {
     if (!token || !tag) return;
-    // Products first, then the categories and units they use.
+    // Stock first, then products, then the categories and units they use, then warehouses and branches.
+    await deleteTaggedStock(request);
     await deleteByTag(request, token, "/products", tag);
     await deleteByTag(request, token, "/categories", tag);
     await deleteByTag(request, token, "/item-unit", tag);
+    await deleteByTag(request, token, "/inventory", tag);
+    await deleteByTag(request, token, "/branch", tag);
     tag = undefined;
   });
 
@@ -440,6 +493,109 @@ test.describe("with backend", () => {
     await expect(cells.nth(COL.retailPrice)).toHaveText("22.75");
     await expect(cells.nth(COL.bulkWholesalePrice)).toHaveText("15.1234");
     await expect(rowWith(page, product.name)).toHaveCount(0);
+  });
+
+  test("edit: a product with other units (carton = 12) shows its primary unit read-only with the note", async ({
+    page,
+    request,
+  }) => {
+    const carton = await createByApi(request, token, "/item-unit", { name: `كرتونة ${tag}` });
+    const product = await createProduct(request, { name: `صنف بوحدات ${tag}` });
+    await addProductUnitByApi(request, product.id, carton.id, 12);
+    await page.goto("/products");
+
+    const dialog = await openEdit(page, product);
+    const primaryUnit = dialog.getByLabel("الوحدة الأساسية");
+    await expect(primaryUnit).toHaveValue(unit.name);
+    await expect(primaryUnit).toHaveAttribute("readonly", "");
+    await expect(dialog.locator("select[name=primaryItemUnitId]")).toHaveCount(0);
+    await expect(dialog.getByText(PRIMARY_UNIT_LOCKED)).toBeVisible();
+
+    // The other fields still save, and the primary unit is sent unchanged (the backend accepts that).
+    await dialog.getByLabel("سعر التجزئة").fill("16");
+    const requestPromise = waitForProductWrite(page, "PATCH", `${API_URL}/products/${product.id}`);
+    await dialog.getByRole("button", { name: "حفظ" }).click();
+    const body = (await requestPromise).postDataJSON();
+    expect(body.primaryItemUnitId).toBe(unit.id);
+    expect(body.retailPrice).toBe(16);
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الصنف بنجاح" })).toBeVisible();
+  });
+
+  test("edit: a product without units keeps the primary unit Select (no note)", async ({ page, request }) => {
+    const product = await createProduct(request, { name: `صنف بلا وحدات ${tag}` });
+    await page.goto("/products");
+
+    const dialog = await openEdit(page, product);
+    const primaryUnit = dialog.locator("select[name=primaryItemUnitId]");
+    await expect(primaryUnit).toBeEnabled();
+    await expect(primaryUnit).toHaveValue(unit.id);
+    await expect(dialog.getByText(PRIMARY_UNIT_LOCKED)).toHaveCount(0);
+  });
+
+  test.describe("the backend refuses", () => {
+    // The browser logs the 400 answers itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 400/] });
+
+    test("primary unit: a unit added after the form opened → 400 BAD_REQUEST primaryItemUnitId → Arabic", async ({
+      page,
+      request,
+    }) => {
+      const carton = await createByApi(request, token, "/item-unit", { name: `كرتونة ${tag}` });
+      const otherUnit = await createByApi(request, token, "/item-unit", { name: `وحدة أخرى ${tag}` });
+      const product = await createProduct(request, { name: `صنف وحدة مقفلة ${tag}` });
+      await page.goto("/products");
+
+      const dialog = await openEdit(page, product);
+      // Someone adds a carton unit in the meantime.
+      await addProductUnitByApi(request, product.id, carton.id, 12);
+      await dialog.getByLabel("الوحدة الأساسية").selectOption({ label: otherUnit.name });
+
+      const responsePromise = page.waitForResponse((res) => res.request().method() === "PATCH");
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      const response = await responsePromise;
+      expect(response.status()).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "BAD_REQUEST", field: "primaryItemUnitId" });
+
+      await expect(dialog.getByRole("alert")).toHaveText(PRIMARY_UNIT_LOCKED);
+      await expect(dialog).toBeVisible();
+      const saved = (await (await getProductFromApi(request, product.id)).json()).data;
+      expect(saved.primaryItemUnitId).toBe(unit.id);
+    });
+
+    test("a product in a warehouse: SERVICE → 400 itemType; another primary unit (it has stock movements) → 400", async ({
+      page,
+      request,
+    }) => {
+      const otherUnit = await createByApi(request, token, "/item-unit", { name: `وحدة أخرى ${tag}` });
+      const product = await createProduct(request, { name: `صنف في مخزن ${tag}` });
+      await putInWarehouseByApi(request, product.id);
+      await page.goto("/products");
+
+      // No units: the Select is usable (stock movements can't be known in advance).
+      const dialog = await openEdit(page, product);
+      const save = dialog.getByRole("button", { name: "حفظ" });
+
+      await dialog.getByLabel("نوع الصنف").selectOption("SERVICE");
+      let responsePromise = page.waitForResponse((res) => res.request().method() === "PATCH");
+      await save.click();
+      let response = await responsePromise;
+      expect(response.status()).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "BAD_REQUEST", field: "itemType" });
+      await expect(dialog.getByRole("alert")).toHaveText(SERVICE_IN_WAREHOUSE);
+
+      await dialog.getByLabel("نوع الصنف").selectOption("STOCK");
+      await dialog.getByLabel("الوحدة الأساسية").selectOption({ label: otherUnit.name });
+      responsePromise = page.waitForResponse((res) => res.request().method() === "PATCH");
+      await save.click();
+      response = await responsePromise;
+      expect(response.status()).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "BAD_REQUEST", field: "primaryItemUnitId" });
+      await expect(dialog.getByRole("alert")).toHaveText(PRIMARY_UNIT_LOCKED);
+
+      const saved = (await (await getProductFromApi(request, product.id)).json()).data;
+      expect([saved.itemType, saved.primaryItemUnitId]).toEqual(["STOCK", unit.id]);
+    });
   });
 
   test.describe("barcode conflicts", () => {

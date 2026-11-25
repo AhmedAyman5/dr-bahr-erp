@@ -7,6 +7,9 @@
 //   stock records → products → categories / units → warehouses → branches.
 // Other spec files run in parallel and create warehouses too, so these tests open
 // /stock?inventory=<id> directly instead of relying on "the only warehouse".
+// Week 2: every add / adjustment / remove writes a stock movement; the tests check the item card
+// (GET /stock-movements/item-card). Movements are never deleted (that is the backend's rule), they
+// stay attached to the soft-deleted test products.
 //
 // "mocked API" tests fake the endpoints with page.route (no backend needed).
 import {
@@ -70,6 +73,25 @@ test.describe("with backend", () => {
     return createByApi(request, token, `/product-inventory/inventory/${inventoryId}`, body);
   }
 
+  // The item card (كارت الصنف) of a product in the main test warehouse: { quantity, avgCost, movements }.
+  async function getItemCard(request, productId) {
+    const response = await request.get(
+      `${API_URL}/stock-movements/item-card?productId=${productId}&warehouseId=${inventory.id}`,
+      { headers: headers() },
+    );
+    expect(response.ok(), "GET item card failed").toBeTruthy();
+    return (await response.json()).data;
+  }
+
+  // Collects every PATCH sent to /product-inventory.
+  function recordPatches(page) {
+    const sent = [];
+    page.on("request", (req) => {
+      if (req.url().startsWith(`${API_URL}/product-inventory`) && req.method() === "PATCH") sent.push(req.url());
+    });
+    return sent;
+  }
+
   // Stock records have no name: remove every record of every tagged warehouse.
   async function deleteTaggedStock(request) {
     const response = await request.get(`${API_URL}/inventory`, { headers: headers() });
@@ -130,7 +152,7 @@ test.describe("with backend", () => {
       const productSelect = dialog.getByLabel("الصنف");
       await productSelect.selectOption({ label: productLabel(gone) });
       await dialog.getByLabel(/الكمية/).fill("5");
-      await dialog.getByLabel("سعر التكلفة").fill("2");
+      await dialog.getByLabel("متوسط التكلفة").fill("2");
 
       // Someone deletes the product in the meantime.
       const deleted = await request.delete(`${API_URL}/products/${gone.id}`, { headers: headers() });
@@ -235,12 +257,12 @@ test.describe("with backend", () => {
 
     // Numbers start empty and are required.
     await expect(dialog.getByLabel("الكمية")).toHaveValue("");
-    await expect(dialog.getByLabel("سعر التكلفة")).toHaveValue("");
+    await expect(dialog.getByLabel("متوسط التكلفة")).toHaveValue("");
     const save = dialog.getByRole("button", { name: "حفظ" });
     await save.click();
     await expect(dialog.getByText("الصنف مطلوب")).toBeVisible();
     await expect(dialog.getByText("الكمية مطلوبة")).toBeVisible();
-    await expect(dialog.getByText("سعر التكلفة مطلوب")).toBeVisible();
+    await expect(dialog.getByText("متوسط التكلفة مطلوب")).toBeVisible();
 
     // The unit shows next to the quantity once a product is chosen.
     await productSelect.selectOption({ label: productLabel(newProduct) });
@@ -248,7 +270,7 @@ test.describe("with backend", () => {
 
     // 5 decimals and negative values are rejected.
     await dialog.getByLabel("الكمية").fill("1.23456");
-    await dialog.getByLabel("سعر التكلفة").fill("-1");
+    await dialog.getByLabel("متوسط التكلفة").fill("-1");
     await save.click();
     await expect(dialog.getByText("الحد الأقصى 4 أرقام بعد العلامة العشرية")).toBeVisible();
     await expect(dialog.getByText("القيمة يجب ألا تقل عن 0")).toBeVisible();
@@ -256,12 +278,12 @@ test.describe("with backend", () => {
 
     // 4 decimals are fine.
     await dialog.getByLabel("الكمية").fill("100.1234");
-    await dialog.getByLabel("سعر التكلفة").fill("12.5");
+    await dialog.getByLabel("متوسط التكلفة").fill("12.5");
     const requestPromise = page.waitForRequest(
       (req) => req.url().startsWith(`${API_URL}/product-inventory`) && req.method() === "POST",
     );
     // Enter in a field submits the form.
-    await dialog.getByLabel("سعر التكلفة").press("Enter");
+    await dialog.getByLabel("متوسط التكلفة").press("Enter");
     const post = await requestPromise;
     expect(post.url()).toBe(`${API_URL}/product-inventory/inventory/${inventory.id}`);
     expect(post.postDataJSON()).toEqual({ productId: newProduct.id, quantity: 100.1234, costPrice: 12.5 });
@@ -294,7 +316,7 @@ test.describe("with backend", () => {
       const dialog = page.getByRole("dialog", { name: "إضافة صنف للمخزن" });
       await dialog.getByLabel("الصنف").selectOption({ label: productLabel(product) });
       await dialog.getByLabel("الكمية").fill(quantity);
-      await dialog.getByLabel("سعر التكلفة").fill(costPrice);
+      await dialog.getByLabel("متوسط التكلفة").fill(costPrice);
       const responsePromise = page.waitForResponse(
         (res) => res.url().startsWith(`${API_URL}/product-inventory`) && res.request().method() === "POST",
       );
@@ -320,15 +342,23 @@ test.describe("with backend", () => {
     await expect(cells.nth(COL.costPrice)).toHaveText("7.25");
   });
 
-  test("edit: product + warehouse read-only, PATCH sends only quantity + costPrice", async ({ page, request }) => {
-    const product = await createProduct(request, { name: `صنف تعديل ${tag}` });
+  test("تسوية: read-only product + warehouse, حفظ disabled until something changes, reason required, chips", async ({
+    page,
+    request,
+  }) => {
+    const product = await createProduct(request, { name: `صنف تسوية ${tag}` });
     const record = await addStockByApi(request, inventory.id, { productId: product.id, quantity: 100, costPrice: 12.5 });
+    const patches = recordPatches(page);
     await openWarehouse(page);
+    await expect(page.getByRole("columnheader", { name: "متوسط التكلفة" })).toBeVisible();
 
-    await page.getByRole("button", { name: `تعديل ${product.name}` }).click();
-    const dialog = page.getByRole("dialog", { name: "تعديل الرصيد" });
+    const adjustButton = page.getByRole("button", { name: `تسوية رصيد ${product.name}` });
+    await expect(adjustButton).toHaveAttribute("title", "تسوية الرصيد");
+    await adjustButton.click();
+    const dialog = page.getByRole("dialog", { name: "تسوية الرصيد" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("التعديل للتصحيح اليدوي فقط (مثل خطأ في الرصيد الافتتاحي)")).toBeVisible();
+    // The Week 1 "manual correction only" note is gone.
+    await expect(dialog.getByText("التصحيح اليدوي")).toHaveCount(0);
 
     const productField = dialog.getByLabel("الصنف");
     await expect(productField).toHaveValue(productLabel(product));
@@ -336,21 +366,157 @@ test.describe("with backend", () => {
     await expect(dialog.getByLabel("المخزن")).toHaveAttribute("readonly", "");
     await expect(dialog.getByRole("combobox")).toHaveCount(0);
     await expect(dialog.getByLabel(`الكمية (${unit.name})`)).toHaveValue("100");
-    await expect(dialog.getByLabel("سعر التكلفة")).toHaveValue("12.5");
+    await expect(dialog.getByLabel("متوسط التكلفة")).toHaveValue("12.5");
+    const reason = dialog.getByLabel("سبب التسوية");
+    await expect(reason).toHaveValue("");
+    await expect(reason).toHaveAttribute("maxlength", "250");
 
-    await dialog.getByLabel("الكمية").fill("150.5");
-    await dialog.getByLabel("سعر التكلفة").fill("13");
-    const requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
-    await dialog.getByRole("button", { name: "حفظ" }).click();
-    const patch = await requestPromise;
-    expect(patch.url()).toBe(`${API_URL}/product-inventory/${record.id}`);
-    expect(patch.postDataJSON()).toEqual({ quantity: 150.5, costPrice: 13 });
+    // Nothing changed → حفظ disabled: the same number typed differently, or only a reason, is no change.
+    const save = dialog.getByRole("button", { name: "حفظ" });
+    await expect(save).toBeDisabled();
+    await expect(save).toHaveAttribute("title", "غيّر الكمية أو متوسط التكلفة أولاً");
+    await dialog.getByLabel("الكمية").fill("100.0");
+    await reason.fill("سبب بدون تغيير");
+    await expect(save).toBeDisabled();
+    await reason.press("Enter");
+    await reason.fill("");
+
+    // A change without a reason → Arabic error under the field, no request.
+    await dialog.getByLabel("الكمية").fill("90");
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(dialog.getByText("سبب التسوية مطلوب عند تغيير الكمية أو التكلفة")).toBeVisible();
+    expect(patches).toEqual([]);
+
+    // The chips fill the reason box (one is marked as chosen).
+    const chips = dialog.getByRole("group", { name: "أسباب شائعة" }).getByRole("button");
+    await expect(chips).toHaveText(["جرد", "تالف", "خطأ في الإدخال"]);
+    await dialog.getByRole("button", { name: "تالف" }).click();
+    await expect(reason).toHaveValue("تالف");
+    await expect(dialog.getByText("سبب التسوية مطلوب عند تغيير الكمية أو التكلفة")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "تالف" })).toHaveAttribute("aria-pressed", "true");
+    await dialog.getByRole("button", { name: "جرد" }).click();
+    await expect(reason).toHaveValue("جرد");
+    await expect(dialog.getByRole("button", { name: "تالف" })).toHaveAttribute("aria-pressed", "false");
+
+    const responsePromise = page.waitForResponse((res) => res.request().method() === "PATCH");
+    await save.click();
+    const response = await responsePromise;
+    expect(response.url()).toBe(`${API_URL}/product-inventory/${record.id}`);
+    expect(response.status()).toBe(200);
+    // Only the changed quantity + the reason (the unchanged average cost is not sent).
+    expect(response.request().postDataJSON()).toEqual({ quantity: 90, reason: "جرد" });
+    expect(patches).toHaveLength(1);
 
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الرصيد بنجاح" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "تمت تسوية الرصيد بنجاح" })).toBeVisible();
     const cells = rowWith(page, product.name).getByRole("cell");
-    await expect(cells.nth(COL.quantity)).toHaveText("150.50");
-    await expect(cells.nth(COL.costPrice)).toHaveText("13.00");
+    await expect(cells.nth(COL.quantity)).toHaveText("90.00");
+    await expect(cells.nth(COL.costPrice)).toHaveText("12.50");
+
+    // The item card: OPENING +100, then ADJUSTMENT −10 with the reason.
+    const card = await getItemCard(request, product.id);
+    expect(card.movements.map((movement) => [movement.type, Number(movement.quantity)])).toEqual([
+      ["OPENING", 100],
+      ["ADJUSTMENT", -10],
+    ]);
+    expect(card.movements[1].reason).toBe("جرد");
+    expect(Number(card.quantity)).toBe(90);
+  });
+
+  test("تسوية: only the average cost changed → PATCH sends costPrice + the typed reason (trimmed)", async ({
+    page,
+    request,
+  }) => {
+    const product = await createProduct(request, { name: `صنف تكلفة ${tag}` });
+    await addStockByApi(request, inventory.id, { productId: product.id, quantity: 100, costPrice: 12.5 });
+    await openWarehouse(page);
+
+    await page.getByRole("button", { name: `تسوية رصيد ${product.name}` }).click();
+    const dialog = page.getByRole("dialog", { name: "تسوية الرصيد" });
+    await dialog.getByLabel("متوسط التكلفة").fill("13.1234");
+    // Any text is allowed, not only the chips.
+    await dialog.getByLabel("سبب التسوية").fill("  إعادة تقييم  ");
+
+    const requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
+    // Enter in a field submits the form.
+    await dialog.getByLabel("سبب التسوية").press("Enter");
+    expect((await requestPromise).postDataJSON()).toEqual({ costPrice: 13.1234, reason: "إعادة تقييم" });
+
+    await expect(dialog).toBeHidden();
+    const cells = rowWith(page, product.name).getByRole("cell");
+    await expect(cells.nth(COL.quantity)).toHaveText("100.00");
+    await expect(cells.nth(COL.costPrice)).toHaveText("13.1234");
+
+    // A cost-only change is a movement with quantity 0.
+    const last = (await getItemCard(request, product.id)).movements.at(-1);
+    expect([last.type, Number(last.quantity), last.reason]).toEqual(["ADJUSTMENT", 0, "إعادة تقييم"]);
+  });
+
+  test.describe("the backend refuses", () => {
+    // The browser logs the 400 answers itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 400/] });
+
+    test("تسوية that reaches the backend without a reason → 400 VALIDATION_FAILED reason → Arabic message", async ({
+      page,
+      request,
+    }) => {
+      const product = await createProduct(request, { name: `صنف بلا سبب ${tag}` });
+      const record = await addStockByApi(request, inventory.id, { productId: product.id, quantity: 100, costPrice: 10 });
+      // The form never sends an empty reason, so remove it on the way to the REAL backend.
+      await page.route(`${API_URL}/product-inventory/${record.id}`, (route) => {
+        if (route.request().method() !== "PATCH") return route.continue();
+        const body = route.request().postDataJSON();
+        delete body.reason;
+        return route.continue({ postData: JSON.stringify(body) });
+      });
+      await openWarehouse(page);
+
+      await page.getByRole("button", { name: `تسوية رصيد ${product.name}` }).click();
+      const dialog = page.getByRole("dialog", { name: "تسوية الرصيد" });
+      await dialog.getByLabel("الكمية").fill("50");
+      await dialog.getByRole("button", { name: "جرد" }).click();
+      const responsePromise = page.waitForResponse((res) => res.request().method() === "PATCH");
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      const response = await responsePromise;
+      expect(response.status()).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "VALIDATION_FAILED", field: "reason" });
+
+      await expect(dialog.getByRole("alert")).toHaveText("سبب التسوية مطلوب عند تغيير الكمية أو التكلفة");
+      await expect(dialog.getByLabel("الكمية")).toHaveValue("50");
+      // Nothing moved.
+      expect(Number((await getItemCard(request, product.id)).quantity)).toBe(100);
+    });
+
+    test("add: a product that became SERVICE while the form was open → 400 BAD_REQUEST productId → Arabic", async ({
+      page,
+      request,
+    }) => {
+      const product = await createProduct(request, { name: `صنف سيصبح خدمي ${tag}` });
+      await openWarehouse(page);
+
+      await page.getByRole("button", { name: "إضافة صنف للمخزن" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة صنف للمخزن" });
+      await dialog.getByLabel("الصنف").selectOption({ label: productLabel(product) });
+      await dialog.getByLabel("الكمية").fill("5");
+      await dialog.getByLabel("متوسط التكلفة").fill("2");
+
+      // Someone makes it a service in the meantime.
+      const patched = await request.patch(`${API_URL}/products/${product.id}`, {
+        headers: headers(),
+        data: { itemType: "SERVICE" },
+      });
+      expect(patched.ok()).toBeTruthy();
+
+      const responsePromise = page.waitForResponse((res) => res.request().method() === "POST");
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      const response = await responsePromise;
+      expect(response.status()).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "BAD_REQUEST", field: "productId" });
+
+      await expect(dialog.getByRole("alert")).toHaveText("الأصناف الخدمية ليس لها مخزون");
+      await expect(dialog).toBeVisible();
+    });
   });
 
   test("low-stock badge: only when reorderLimit > 0 and quantity ≤ reorderLimit", async ({ page, request }) => {
@@ -424,6 +590,12 @@ test.describe("with backend", () => {
     // The API agrees: the record is gone.
     const response = await request.get(`${API_URL}/product-inventory/${record.id}`, { headers: headers() });
     expect(response.status()).toBe(404);
+
+    // Week 2: the backend first adjusts the stock to 0, so the item card still adds up.
+    const card = await getItemCard(request, product.id);
+    const last = card.movements.at(-1);
+    expect([last.type, Number(last.quantity), last.reason]).toEqual(["ADJUSTMENT", -3, "حذف الصنف من المخزن"]);
+    expect(Number(card.quantity)).toBe(0);
   });
 
   test("unsaved changes: a changed form asks first, an untouched one closes directly", async ({ page, request }) => {
@@ -432,16 +604,24 @@ test.describe("with backend", () => {
     await openWarehouse(page);
     const discard = page.getByRole("dialog", { name: "تجاهل التغييرات" });
 
-    // Untouched edit form: Escape closes without asking.
-    await page.getByRole("button", { name: `تعديل ${product.name}` }).click();
-    const editForm = page.getByRole("dialog", { name: "تعديل الرصيد" });
+    // Untouched adjustment form: Escape closes without asking.
+    await page.getByRole("button", { name: `تسوية رصيد ${product.name}` }).click();
+    const editForm = page.getByRole("dialog", { name: "تسوية الرصيد" });
     await expect(editForm).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(editForm).toBeHidden();
     await expect(discard).toHaveCount(0);
 
-    // Changed edit form: asks; "إلغاء" keeps the data, "تجاهل التغييرات" closes.
-    await page.getByRole("button", { name: `تعديل ${product.name}` }).click();
+    // A chosen reason alone already counts as a change.
+    await page.getByRole("button", { name: `تسوية رصيد ${product.name}` }).click();
+    await editForm.getByRole("button", { name: "جرد" }).click();
+    await page.keyboard.press("Escape");
+    await expect(discard).toBeVisible();
+    await discard.getByRole("button", { name: "تجاهل التغييرات" }).click();
+    await expect(editForm).toBeHidden();
+
+    // Changed adjustment form: asks; "إلغاء" keeps the data, "تجاهل التغييرات" closes.
+    await page.getByRole("button", { name: `تسوية رصيد ${product.name}` }).click();
     await editForm.getByLabel("الكمية").fill("8");
     await editForm.getByRole("button", { name: "إلغاء" }).click();
     await expect(discard).toBeVisible();
@@ -586,6 +766,9 @@ test.describe("mocked API", () => {
 
       await expect(page.getByLabel("المخزن")).toHaveValue("w1");
       await expect(page.getByLabel("المخزن").locator("option:checked")).toHaveText("مخزن 1 — فرع وهمي");
+      // Week 2: costPrice is the weighted average cost.
+      await expect(page.getByRole("columnheader", { name: "متوسط التكلفة" })).toBeVisible();
+      await expect(page.getByRole("columnheader", { name: "سعر التكلفة" })).toHaveCount(0);
       const lowCells = rowWith(page, "صنف قليل").getByRole("cell");
       await expect(lowCells.nth(COL.code)).toHaveText("PRD-p1");
       await expect(lowCells.nth(COL.unit)).toHaveText("قطعة");

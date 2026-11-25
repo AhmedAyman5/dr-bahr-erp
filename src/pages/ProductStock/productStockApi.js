@@ -1,5 +1,7 @@
 // All backend calls of the Product Stock page (أرصدة المخزون).
-// Docs: ../backend/doc/week1/product-inventory.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 1)
+// Docs: ../backend/doc/week1/product-inventory.txt + ../backend/doc/week2/stock.txt ("What changed in
+// /product-inventory"). Since Week 2 every change writes a stock movement (item card):
+// add = OPENING, adjust / remove = ADJUSTMENT. costPrice is the weighted AVERAGE cost.
 import api from "../../services/api";
 import { toMoneyNumber } from "../../utils/money";
 
@@ -40,15 +42,22 @@ export async function addStock(inventoryId, form) {
   return response.data.data;
 }
 
-// Manual correction: only quantity and costPrice can change.
-export async function updateStock(id, form) {
-  const response = await api.patch(`/product-inventory/${id}`, {
-    quantity: toMoneyNumber(form.quantity, DECIMALS),
-    costPrice: toMoneyNumber(form.costPrice, DECIMALS),
-  });
+// Stock adjustment (تسوية): the server writes an ADJUSTMENT movement with the difference.
+// changed = { quantity: true/false, costPrice: true/false } (the form calls it only when one is true).
+// Only the changed values are sent: an unchanged one is left out, so a value that a document
+// (e.g. a posted purchase invoice) changed in the meantime is never overwritten with the old number.
+// reason is required by the backend whenever quantity or costPrice changes (max 250).
+export async function adjustStock(id, form, changed) {
+  const body = {};
+  if (changed.quantity) body.quantity = toMoneyNumber(form.quantity, DECIMALS);
+  if (changed.costPrice) body.costPrice = toMoneyNumber(form.costPrice, DECIMALS);
+  body.reason = form.reason.trim();
+
+  const response = await api.patch(`/product-inventory/${id}`, body);
   return response.data.data;
 }
 
+// The backend first adjusts the stock to 0 (ADJUSTMENT, reason "حذف الصنف من المخزن"), then removes the row.
 export async function removeStock(id) {
   await api.delete(`/product-inventory/${id}`);
 }

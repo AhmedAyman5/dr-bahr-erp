@@ -1,5 +1,7 @@
 // All backend calls of the Products page.
-// Docs: ../backend/doc/week1/products.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 2)
+// Docs: ../backend/doc/week1/products.txt + ../backend/doc/week2/week2flow.txt (section 12: the primary
+// unit is locked once the product has stock movements or product units; a product in a warehouse can't
+// become SERVICE) + ../backend/doc/week2/product-units.txt.
 import api from "../../services/api";
 import { optionalField } from "../../utils/body";
 import { toMoneyNumber } from "../../utils/money";
@@ -28,6 +30,12 @@ function toProductBody(form, isEdit) {
 
 export async function getProducts() {
   const response = await api.get("/products");
+  return response.data.data;
+}
+
+// One product with its details. Week 2: "units" = its other units (carton = 12...), [] when none.
+export async function getProduct(id) {
+  const response = await api.get(`/products/${id}`);
   return response.data.data;
 }
 

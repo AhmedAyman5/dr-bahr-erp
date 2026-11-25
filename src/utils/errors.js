@@ -1,10 +1,14 @@
 // Turns any API error into an Arabic message for the user.
 // Uses the stable backend "code" + "field" — never the English "message".
-// Source: ../backend/doc/FRONTEND_WEEK1_UPDATE_2.txt (PART 4) + FRONTEND_WEEK1_UPDATE_3.txt (PART 2, 3).
+// Sources: ../backend/doc/week1/00-overview.txt, ../backend/doc/week2/00-overview.txt and week2flow.txt.
 //
 // Usage:
 //   setError(getErrorMessage(err));
 //   setError(getErrorMessage(err, { context: "login" }));
+//
+// Week 2 document lines: the field is "lines.N.<field>" (N starts at 0), e.g. "lines.2.quantity"
+// → "البند رقم 3: الكمية المتاحة في المخزن غير كافية". To highlight that row in a form:
+//   const lineError = getLineError(err); // { lineIndex: 2, field: "quantity" } or null
 
 const ERROR_AR = {
   VALIDATION_FAILED: "البيانات المدخلة غير صحيحة، راجع حقل {field}",
@@ -17,6 +21,10 @@ const ERROR_AR = {
   ALREADY_EXISTS: "{field} مستخدم بالفعل، اختر قيمة أخرى",
   BELONGS_TO_DELETED: "{field} مرتبط بسجل محذوف ولا يمكن استخدامه",
   INTERNAL_ERROR: "حدث خطأ غير متوقع، حاول مرة أخرى لاحقاً",
+  // Week 2: documents and stock.
+  INVALID_STATUS: "لا يمكن تنفيذ العملية في حالة المستند الحالية",
+  INSUFFICIENT_STOCK: "الكمية المتاحة في المخزن غير كافية",
+  QUANTITY_EXCEEDED: "الكمية أكبر من المسموح بإرجاعه",
 };
 
 const FIELD_AR = {
@@ -42,7 +50,8 @@ const FIELD_AR = {
   reorderLimit: "حد إعادة الطلب",
   hasExpiryDate: "تاريخ الصلاحية",
   quantity: "الكمية",
-  costPrice: "سعر التكلفة",
+  // Week 2: the stock cost is the weighted average cost.
+  costPrice: "متوسط التكلفة",
   hireDate: "تاريخ التعيين",
   phone: "الهاتف",
   taxNumber: "الرقم الضريبي",
@@ -50,19 +59,82 @@ const FIELD_AR = {
   contactPerson: "الشخص المسؤول",
   creditLimit: "الحد الائتماني",
   openingBalance: "الرصيد الافتتاحي",
+
+  // Week 2 (labels from the module docs in ../backend/doc/week2/).
+  code: "الكود",
+  symbol: "الرمز",
+  isDefault: "العملة الأساسية",
+  currencyId: "العملة",
+  exchangeRate: "سعر الصرف",
+  itemUnitId: "الوحدة",
+  factor: "عدد القطع في الوحدة",
+  supplierId: "المورد",
+  warehouseId: "المخزن",
+  quotationDate: "تاريخ العرض",
+  validUntil: "صالح حتى",
+  invoiceDate: "تاريخ الفاتورة",
+  dueDate: "تاريخ الاستحقاق",
+  returnDate: "تاريخ المرتجع",
+  supplierInvoiceNumber: "رقم فاتورة المورد",
+  paymentType: "طريقة الدفع",
+  paidAmount: "المدفوع",
+  refundAmount: "المبلغ المسترد",
+  discountPercent: "نسبة الخصم",
+  discountValue: "قيمة الخصم",
+  taxPercent: "نسبة الضريبة",
+  unitPrice: "سعر الوحدة",
+  unitCost: "سعر شراء الوحدة",
+  batchNumber: "رقم التشغيلة",
+  expiryDate: "تاريخ الصلاحية",
+  reason: "السبب",
+  notes: "الملاحظات",
+  lines: "البنود",
+  status: "الحالة",
+  purchaseInvoiceId: "فاتورة الشراء",
+  purchaseInvoiceLineId: "بند الفاتورة الأصلي",
+  // Query string of the paginated lists.
+  page: "رقم الصفحة",
+  pageSize: "عدد الصفوف في الصفحة",
+  dateFrom: "من تاريخ",
+  dateTo: "إلى تاريخ",
+  type: "نوع الحركة",
+  search: "البحث",
+};
+
+// One exact message for a code + field pair (wins over the general ERROR_AR text).
+// Key: "<code>:<field>". Only header fields here: a line error ("lines.N.<field>") never matches.
+const CODE_FIELD_AR = {
+  // Product stock: the product is already in this warehouse.
+  "ALREADY_EXISTS:productId": "هذا الصنف موجود بالفعل في هذا المخزن، عدّل الكمية بدلاً من إضافته",
+  // Product stock: SERVICE products can't be put in a warehouse.
+  "BAD_REQUEST:productId": "الأصناف الخدمية ليس لها مخزون",
+  // Products: the primary unit is locked once the product has stock movements or product units.
+  "BAD_REQUEST:primaryItemUnitId": "لا يمكن تغيير الوحدة الأساسية بعد استخدام الصنف (له حركات مخزن أو وحدات)",
+  // Products: a product that is in a warehouse can't become SERVICE.
+  "BAD_REQUEST:itemType": "لا يمكن تحويل الصنف إلى خدمي وهو موجود في مخزن",
+  // Users: a user linked to an employee must be in the employee's branch.
+  "BAD_REQUEST:branchId": "فرع المستخدم يجب أن يكون نفس فرع الموظف",
+  // Users: a deleted user keeps its employee / email, so they can't be reused yet.
+  "BELONGS_TO_DELETED:employeeId": "هذا الموظف مرتبط بمستخدم محذوف",
+  "BELONGS_TO_DELETED:email": "هذا البريد مرتبط بمستخدم محذوف",
 };
 
 const UNKNOWN_FIELD_AR = "أحد الحقول";
 const NETWORK_ERROR_AR = "تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى";
 const LOGIN_FAILED_AR = "اسم المستخدم أو كلمة المرور غير صحيحة";
-const PRODUCT_IN_INVENTORY_AR =
-  "هذا الصنف موجود بالفعل في هذا المخزن، عدّل الكمية بدلاً من إضافته";
-const BRANCH_MISMATCH_AR = "فرع المستخدم يجب أن يكون نفس فرع الموظف";
-// A deleted user keeps its employee / email (UPDATE_3 PART 6.3), so they can't be reused yet.
-const BELONGS_TO_DELETED_USER_AR = {
-  employeeId: "هذا الموظف مرتبط بمستخدم محذوف",
-  email: "هذا البريد مرتبط بمستخدم محذوف",
-};
+
+// "lines.2.quantity" → { lineIndex: 2, field: "quantity" }  |  any other field → null
+function parseLineField(field) {
+  const match = /^lines\.(\d+)\.(\w+)$/.exec(field || "");
+  if (!match) return null;
+  return { lineIndex: Number(match[1]), field: match[2] };
+}
+
+// The document line an error belongs to, so a form can highlight that row.
+// getLineError(err) → { lineIndex: 2, field: "quantity" } (lineIndex starts at 0) or null.
+export function getLineError(error) {
+  return parseLineField(error?.response?.data?.field);
+}
 
 export function getErrorMessage(error, options = {}) {
   // No response at all → server is down or there is no network.
@@ -76,22 +148,15 @@ export function getErrorMessage(error, options = {}) {
     return LOGIN_FAILED_AR;
   }
 
-  // Special case: product already in this inventory (product stock page).
-  if (code === "ALREADY_EXISTS" && field === "productId") {
-    return PRODUCT_IN_INVENTORY_AR;
-  }
+  const special = CODE_FIELD_AR[`${code}:${field}`];
+  if (special) return special;
 
-  // Special case: employee / email still kept by a deleted user (users page).
-  if (code === "BELONGS_TO_DELETED" && BELONGS_TO_DELETED_USER_AR[field]) {
-    return BELONGS_TO_DELETED_USER_AR[field];
-  }
-
-  // Special case: a user linked to an employee must be in the employee's branch (users page).
-  if (code === "BAD_REQUEST" && field === "branchId") {
-    return BRANCH_MISMATCH_AR;
-  }
+  // A document line: "البند رقم 3: ..." (the user counts lines from 1).
+  const line = parseLineField(field);
+  const fieldName = line ? line.field : field;
 
   const template = ERROR_AR[code] || ERROR_AR.INTERNAL_ERROR;
-  const fieldLabel = FIELD_AR[field] || UNKNOWN_FIELD_AR;
-  return template.replace("{field}", fieldLabel);
+  const fieldLabel = FIELD_AR[fieldName] || UNKNOWN_FIELD_AR;
+  const message = template.replace("{field}", fieldLabel);
+  return line ? `البند رقم ${line.lineIndex + 1}: ${message}` : message;
 }

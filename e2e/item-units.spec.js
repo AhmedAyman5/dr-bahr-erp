@@ -21,8 +21,8 @@ import {
   API_DOWN_MESSAGE,
 } from "./helpers";
 
-const IN_USE_MESSAGE =
-  "لا يمكن حذف هذه الوحدة لأنها الوحدة الأساسية لأصناف حالية. غيّر وحدة هذه الأصناف أو احذفها أولاً.";
+// Week 2: a unit is "in use" as a product's primary unit OR as one of its other units (carton = 12).
+const IN_USE_MESSAGE = "لا يمكن حذف هذه الوحدة لأنها مستخدمة في أصناف أو في وحدات الأصناف.";
 
 // The table row that contains this text.
 function rowWith(page, text) {
@@ -215,6 +215,32 @@ test.describe("with backend", () => {
       await expect(page.getByRole("alert").filter({ hasText: IN_USE_MESSAGE })).toBeVisible();
       await expect(page.getByText("تم حذف الوحدة بنجاح")).toHaveCount(0);
       await expect(rowWith(page, unit.name)).toHaveCount(1);
+    });
+
+    test("delete a unit used only as a product unit (carton = 12) shows the same in-use message", async ({
+      page,
+      request,
+    }) => {
+      const piece = await createUnitByApi(request, `قطعة ${tag}`);
+      const carton = await createUnitByApi(request, `كرتونة ${tag}`);
+      const category = await createByApi(request, token, "/categories", { name: `تصنيف ${tag}` });
+      const product = await createProductByApi(request, token, {
+        name: `صنف ${tag}`,
+        categoryId: category.id,
+        primaryItemUnitId: piece.id,
+      });
+      await createByApi(request, token, `/products/${product.id}/units`, { itemUnitId: carton.id, factor: 12 });
+      await page.goto("/units");
+
+      const responsePromise = page.waitForResponse((res) => res.request().method() === "DELETE");
+      await page.getByRole("button", { name: `حذف ${carton.name}` }).click();
+      await page.getByRole("dialog", { name: "حذف الوحدة" }).getByRole("button", { name: "حذف الوحدة" }).click();
+      const response = await responsePromise;
+      expect(response.status()).toBe(400);
+      expect((await response.json()).code).toBe("BAD_REQUEST");
+
+      await expect(page.getByRole("alert").filter({ hasText: IN_USE_MESSAGE })).toBeVisible();
+      await expect(rowWith(page, carton.name)).toHaveCount(1);
     });
   });
 

@@ -17,9 +17,9 @@ import { formatDate } from "../../utils/format";
 import { deleteItemUnit, getItemUnits } from "./itemUnitsApi";
 import ItemUnitFormModal from "./components/ItemUnitFormModal";
 
-// Shown when DELETE returns BAD_REQUEST: active products still use this unit.
-const IN_USE_MESSAGE =
-  "لا يمكن حذف هذه الوحدة لأنها الوحدة الأساسية لأصناف حالية. غيّر وحدة هذه الأصناف أو احذفها أولاً.";
+// Shown when DELETE returns BAD_REQUEST: active products use this unit as their primary unit,
+// or as one of their other units (Week 2 product units, e.g. carton = 12).
+const IN_USE_MESSAGE = "لا يمكن حذف هذه الوحدة لأنها مستخدمة في أصناف أو في وحدات الأصناف.";
 
 const COLUMNS = [
   { key: "code", label: "الكود" },

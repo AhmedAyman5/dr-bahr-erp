@@ -6,18 +6,24 @@
 //   )}
 //   product = null → add mode, product = object → edit mode.
 //   onRefreshLists() reloads the category / unit lists silently (called when a chosen one was deleted).
+//
+// Week 2: the primary unit can't change once the product has stock movements or product units.
+// Edit mode loads GET /products/:id: when its "units" list is not empty, the primary unit is shown
+// read-only. Stock movements can't be known in advance: then the backend's error explains it on save.
 import { useState } from "react";
 import Alert from "../../../components/ui/Alert";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Modal from "../../../components/ui/Modal";
 import Select from "../../../components/ui/Select";
+import useLoadData from "../../../hooks/useLoadData";
 import { getErrorMessage } from "../../../utils/errors";
 import { ITEM_TYPES } from "../../../utils/labels";
 import { validateMoney } from "../../../utils/money";
-import { createProduct, updateProduct } from "../productsApi";
+import { createProduct, getProduct, updateProduct } from "../productsApi";
 
 const FORM_ID = "product-form";
+const PRIMARY_UNIT_LOCKED = "لا يمكن تغيير الوحدة الأساسية بعد استخدام الصنف (له حركات مخزن أو وحدات)";
 
 // Prices and reorderLimit are Decimal(18,4) and may not be negative.
 const DECIMAL_RULES = { min: 0, maxDecimals: 4 };
@@ -75,6 +81,15 @@ function ProductFormModal({ product, categories, units, onClose, onSaved, onRefr
   const [saving, setSaving] = useState(false);
 
   const isDirty = Object.keys(initialForm).some((key) => form[key] !== initialForm[key]);
+
+  // Edit mode: the product's details, to know if it has units. Add mode loads nothing.
+  // While they load, the primary unit can't be changed yet. If they fail, the Select stays usable
+  // (the backend still refuses a locked change on save, with an Arabic error).
+  const { data: details, loading: detailsLoading } = useLoadData(async () =>
+    isEdit ? getProduct(product.id) : null,
+  );
+  const primaryUnitLocked = (details?.units?.length ?? 0) > 0;
+  const primaryUnitName = details?.primaryItemUnit?.name ?? product?.primaryItemUnit?.name ?? "-";
 
   const categoryOptions = categories.map((category) => ({ value: category.id, label: category.name }));
   const unitOptions = units.map((unit) => ({ value: unit.id, label: unit.name }));
@@ -188,16 +203,24 @@ function ProductFormModal({ product, categories, units, onClose, onSaved, onRefr
             error={fieldErrors.categoryId}
             required
           />
-          <Select
-            label="الوحدة الأساسية"
-            name="primaryItemUnitId"
-            value={form.primaryItemUnitId}
-            onChange={handleChange}
-            options={unitOptions}
-            placeholder="اختر الوحدة"
-            error={fieldErrors.primaryItemUnitId}
-            required
-          />
+          {primaryUnitLocked ? (
+            <div>
+              <Input label="الوحدة الأساسية" value={primaryUnitName} readOnly required />
+              <p className="mt-1 text-xs text-slate-500">{PRIMARY_UNIT_LOCKED}</p>
+            </div>
+          ) : (
+            <Select
+              label="الوحدة الأساسية"
+              name="primaryItemUnitId"
+              value={form.primaryItemUnitId}
+              onChange={handleChange}
+              options={unitOptions}
+              placeholder="اختر الوحدة"
+              error={fieldErrors.primaryItemUnitId}
+              readOnly={isEdit && detailsLoading}
+              required
+            />
+          )}
           <Select
             label="نوع الصنف"
             name="itemType"

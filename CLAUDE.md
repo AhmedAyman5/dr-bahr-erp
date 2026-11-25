@@ -38,12 +38,14 @@ The project lives in one parent folder with two sub-folders:
 dr-bahr/
 ├── backend/                  ← Mazen's repo (DrBa7r_ERp) — READ ONLY for you
 │   └── doc/
-│       ├── FRONTEND_WEEK1_READ_FIRST.txt
-│       ├── FRONTEND_WEEK1_UPDATE_2.txt   ← read after READ_FIRST (renames, enums, error codes)
-│       ├── FRONTEND_WEEK1_UPDATE_3.txt   ← read after UPDATE_2 (null clears, balances, DOES_NOT_EXIST, roles)
-│       ├── week1/00-overview.txt   ← general rules + error shapes
-│       ├── week1/<module>.txt      ← exact endpoints and bodies
-│       └── week2/ ... week6/
+│       ├── week1/
+│       │   ├── 00-overview.txt     ← general rules + error shapes (still valid in every week)
+│       │   └── <module>.txt        ← exact endpoints and bodies
+│       ├── week2/
+│       │   ├── 00-overview.txt     ← the week's rules: statuses, pagination, new error codes, totals
+│       │   ├── week2flow.txt       ← the WHOLE Week 2 flow, self-contained — the Week 2 source of truth
+│       │   └── <module>.txt        ← currency, product-units, stock, numbering, purchase-*
+│       └── week3/ ... week6/
 └── frontend/                 ← THIS repo (GitHub: dr-bahr-erp)
 ```
 
@@ -55,7 +57,11 @@ dr-bahr/
 - **Never** create, edit, move or delete any file inside `../backend/` — not even a typo fix, a comment, a doc note or a `.env` file. This applies to every tool: file edits, shell commands (`sed`, `echo >`, `rm`, `mv`, ...), and git commands run inside it.
 - If something in the backend looks wrong or is missing, **stop and report it to Ahmed** (what, where, and a suggested fix). Ahmed will tell Mazen. Never work around a backend bug by changing backend code.
 
-Before building or changing a page, read: every `../backend/doc/FRONTEND_WEEKN_*.txt` update file for that week (oldest first), then `../backend/doc/weekN/00-overview.txt` (if present), then the module file(s) for that page. When an update file and a module file disagree, the newest update file wins — mention the conflict to Ahmed.
+Before building or changing a page, read: `../backend/doc/weekN/00-overview.txt`, then the week's flow file if
+there is one (Week 2: `week2flow.txt`, all of it), then the module file(s) for that page. When two docs disagree,
+the flow file wins (it was checked against the backend code) — mention the conflict to Ahmed.
+The backend removed the old `doc/FRONTEND_WEEK*` files; some docs still mention them — ignore those mentions.
+Week 1 knowledge that only lived in them is already in our code and in this file.
 
 - Never invent endpoints, fields, query params or business rules. Use exact URLs and field names as documented.
 - If something is missing or unclear in the docs, **stop and ask** instead of guessing.
@@ -69,7 +75,7 @@ Before building or changing a page, read: every `../backend/doc/FRONTEND_WEEKN_*
 4. Money / quantity values are **sent as numbers** but **returned as strings** (`"12.5"`). Convert with `Number(...)` before sending or calculating; display with `formatNumber`.
 5. Delete is always a soft delete. Deleted records disappear from lists and get-by-id returns 404.
 6. `PATCH` is partial — send only the editable fields.
-   **Emptied optional fields** (UPDATE_3 PART 5): on PATCH an optional field the user emptied is sent as **`null`**
+   **Emptied optional fields**: on PATCH an optional field the user emptied is sent as **`null`**
    (null clears it; `""` is never sent). On create an empty optional field is **left out**. Never send `null` for a
    required field or a money / number field (send `0`) → 400. Use `optionalField(value, isEdit)` from `utils/body.js`.
    The nullable fields: branch `address` · customer `taxNumber`, `commercialRecord`, `phone`, `address` · supplier
@@ -80,6 +86,29 @@ Before building or changing a page, read: every `../backend/doc/FRONTEND_WEEKN_*
 7. Only SUPERADMIN can call the API for now (others get 403).
 8. Enum fields (e.g. product `itemType`: `STOCK` / `SERVICE`) are **sent and compared as the English value** and **displayed with the Arabic label** from the docs.
 9. Every error body is `{ statusCode, message, error, code, field }`. `code` is stable; `message` may change. Translate errors with `code` + `field`, never by parsing `message`.
+
+### Week 2 rules (purchasing + stock) — details in `../backend/doc/week2/week2flow.txt`
+
+1. **Stock is always in the PRIMARY unit** (pieces), even when buying in cartons (`baseQuantity` = quantity × factor).
+   Documents show quantities in the line's unit; stock screens and the item card show pieces.
+2. **Only the server moves stock.** Every change is a stock movement (`OPENING`, `ADJUSTMENT`, `PURCHASE`, ...;
+   `MOVEMENT_TYPES` in `utils/labels.js`). There is no "create movement" screen; refresh stock screens after an action.
+   Manual stock edit = **تسوية** (adjustment): `reason` (max 250) is required when quantity or cost changes.
+   `costPrice` is the weighted **average** cost ("متوسط التكلفة").
+3. **The server computes ALL totals.** The UI may show a live preview while typing, but always displays the server's
+   values after saving. Never send totals (`subTotal`, `taxValue`, `netTotal`, `lineTotal`, `baseQuantity`, ...),
+   `code`, `status` or `createdBy` (only a fixed header `discountValue` may be sent, §9). Status changes only
+   through the action endpoints (post / cancel / status).
+4. **POSTED documents are read-only** (no edit / delete); they can only be cancelled. CANCELLED is read-only too.
+   Show the buttons from the state machines (week2flow §6) and a `StatusBadge` on every document and list row.
+5. **Paginated lists**: `?page=&pageSize=` (pageSize 1–100) → `data = { items, meta: { page, pageSize, total,
+   totalPages } }`. Use `hooks/usePaginatedData` + `components/ui/Pagination`. Week 1 lists stay plain arrays.
+6. **Line errors** use field `"lines.N.<field>"` (N from 0): `getErrorMessage` shows "البند رقم N+1: ...",
+   `getLineError(err)` → `{ lineIndex, field }` to highlight the row.
+7. **Dates** are sent as `"YYYY-MM-DD"` and come back as `"YYYY-MM-DDT00:00:00.000Z"`: use the first 10 characters
+   (never a `Date` object, so the day never shifts with the time zone).
+8. Document numbers (`PQ-2026-000001`, `PI-...`, `PR-...`) are generated by the server: read-only, never sent.
+   The one exception to "never send `code`": a currency's `code` (EGP, 3 capital letters) is typed by the user.
 
 ---
 
@@ -113,13 +142,14 @@ src/
 │
 ├── hooks/                    # shared hooks used by the list pages (see §5)
 │   ├── useLoadData.js        # load / reload / silent refresh of a page's data
+│   ├── usePaginatedData.js   # the same for a paginated Week 2 list (page, pageSize, filters)
 │   └── useAutoHideMessage.js # success message that hides by itself
 │
 ├── utils/
 │   ├── body.js               # optionalField (request bodies: create → left out, edit → null)
-│   ├── errors.js             # getErrorMessage(error) → Arabic message
+│   ├── errors.js             # getErrorMessage(error) → Arabic message, getLineError(error) → { lineIndex, field }
 │   ├── format.js             # formatNumber, formatMoney, formatDate
-│   ├── labels.js             # enum values + Arabic labels (ITEM_TYPES, ROLES, getBalanceSide, ...)
+│   ├── labels.js             # enum values + Arabic labels (ITEM_TYPES, ROLES, statuses, MOVEMENT_TYPES, getBalanceSide, ...)
 │   └── money.js              # validateMoney, toMoneyNumber (money inputs in forms)
 │
 └── pages/                    # one folder per page (see §5)
@@ -221,6 +251,12 @@ useLoadData(async () => (activeId ? getStock(activeId) : []), [activeId]);
 
 // Success message that hides by itself after 4 seconds
 const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
+
+// Week 2 paginated list (data = { items, meta }): page / pageSize / filters go in the query string.
+// The API function receives { page, pageSize, ...filters } (empty filters removed) — see the hook's comment.
+const { items, meta, filters, loading, error, refreshError, reload, refresh, setPage, setPageSize, setFilters } =
+  usePaginatedData(getPurchaseInvoices, { status: "" });
+<Pagination meta={meta} onPageChange={setPage} onPageSizeChange={setPageSize} />
 ```
 
 - `loading` → `<LoadingState />` · `error` → `<ErrorState onRetry={reload} />` · `refreshError` → `<Alert type="error">`.
@@ -229,6 +265,8 @@ const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMess
   After every add / edit / delete call `refresh()`, never `reload()`. If a refresh fails, the old data stays
   and `refreshError` explains it.
 - An answer that arrives after a newer request started is ignored (fast switching in ProductStock).
+- `usePaginatedData`: `setFilters({ status })` **merges** into the filters and goes back to page 1 (so does
+  `setPageSize`); a page that no longer exists after a `refresh()` (its last row was deleted) jumps to the last page.
 - No `eslint-disable` anywhere in `src/`: the hooks are written so the `react-hooks` lint rules pass.
 
 ### Adding a new page — checklist
@@ -270,7 +308,7 @@ const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMess
 - `/auth/signup` is TEMPORARY on the backend — never build a signup screen.
 - Route access checks (logged in / logged out / role) live inside guard components (`ProtectedRoute`, `PublicOnlyRoute`, `RoleRoute`) so they run on every render. Never compute them inline in `AppRoutes` JSX — the value goes stale and can cause redirect loops.
 
-### Roles — `routes/rolePages.js` (UPDATE_3 PART 6.1)
+### Roles — `routes/rolePages.js`
 
 - `ROLE_PAGES` maps each role to the page paths it may open: `{ SUPERADMIN: ["*"], ADMIN: [], ACCOUNTANT: [], SALES: [], USER: [] }`.
   `canAccess(role, path)` checks it; the home page `/` is always allowed.
@@ -281,32 +319,42 @@ const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMess
 
 ### Postponed (backend does it at the end of the project — frontend keeps blocking)
 
-UPDATE_3 PART 6.3: the backend does NOT prevent these yet, so the frontend must keep blocking them:
+The backend does NOT prevent these yet, so the frontend must keep blocking them:
 - a user deleting their own account, or changing their own role (Users page: disabled + note);
 - deleting or demoting the LAST SUPERADMIN;
 - deleted users keep their `employeeId` / `email`, so the same employee / email cannot get a new account
   (409 `BELONGS_TO_DELETED`: field `employeeId` → "هذا الموظف مرتبط بمستخدم محذوف", field `email` →
   "هذا البريد مرتبط بمستخدم محذوف"; other fields → the generic `ERROR_AR` message).
 
-### Waiting for Week 2
+### Week 1 screens changed by Week 2 (week2flow §12)
 
-- Manual stock edit (`PATCH /product-inventory/:id`, ProductStock "تعديل الرصيد") becomes a stock **adjustment
-  ("تسوية") with a required reason** in Week 2 (UPDATE_3 PART 6.2). Wait for the Week 2 docs — do not change it now.
+- ProductStock: the edit action is **"تسوية الرصيد"** (`SlidersHorizontal` icon): required "سبب التسوية" (max 250)
+  with quick-pick chips (جرد / تالف / خطأ في الإدخال); only the changed quantity / cost is sent, + `reason`;
+  حفظ is disabled while nothing changed. `costPrice` is labelled "متوسط التكلفة". SERVICE products stay hidden in "add".
+- Products: the edit form loads `GET /products/:id`; a non-empty `units` array → the primary unit is read-only with
+  the note "لا يمكن تغيير الوحدة الأساسية بعد استخدام الصنف (له حركات مخزن أو وحدات)" (stock movements can't be
+  known in advance: the backend's 400 covers them).
+- Item Units: the in-use delete message also covers product units.
 
 ### Errors — `utils/errors.js`
 
-`getErrorMessage(error, options)` always returns an **Arabic** string, built from `error.response.data.code` + `error.response.data.field` (see `../backend/doc/FRONTEND_WEEK1_UPDATE_2.txt`, PART 4):
+`getErrorMessage(error, options)` always returns an **Arabic** string, built from `error.response.data.code` + `error.response.data.field` (codes: `../backend/doc/week1/00-overview.txt` + `../backend/doc/week2/00-overview.txt`):
 
-- `ERROR_AR` map: one Arabic message per `code` (`VALIDATION_FAILED`, `DOES_NOT_EXIST`, `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `ALREADY_EXISTS`, `BELONGS_TO_DELETED`, `INTERNAL_ERROR`), using `{field}` as a placeholder. Use the Arabic texts from the backend doc.
-- `FIELD_AR` map: Arabic label per field name (from the same doc). Unknown field → a neutral Arabic fallback ("أحد الحقول"), never raw English.
+- `ERROR_AR` map: one Arabic message per `code` (`VALIDATION_FAILED`, `DOES_NOT_EXIST`, `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `ALREADY_EXISTS`, `BELONGS_TO_DELETED`, `INTERNAL_ERROR`, Week 2: `INVALID_STATUS`, `INSUFFICIENT_STOCK`, `QUANTITY_EXCEEDED`), using `{field}` as a placeholder. Use the Arabic texts from the backend doc.
+- `FIELD_AR` map: Arabic label per field name (from the module docs). Unknown field → a neutral Arabic fallback ("أحد الحقول"), never raw English.
+- `CODE_FIELD_AR` map: one exact message for a `"<code>:<field>"` pair (header fields only), e.g.
+  `"BAD_REQUEST:primaryItemUnitId"`. A message that only makes sense on one form stays in that form
+  (e.g. `VALIDATION_FAILED` + `reason` in ProductStock's `StockFormModal`, because returns also have a `reason`).
+- Line fields `"lines.N.<field>"` → "البند رقم N+1: <message with the label of <field>>". `getLineError(error)`
+  → `{ lineIndex, field }` (or `null`) so a document form can highlight that row.
 - No response at all (server down / network) → "تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى".
 - Login screen: `UNAUTHORIZED` → "اسم المستخدم أو كلمة المرور غير صحيحة" (pass an option like `{ context: "login" }`).
 - Unknown / missing `code` → the `INTERNAL_ERROR` message.
-- `DOES_NOT_EXIST` (UPDATE_3 PART 2) = an id in the body points to a missing **or deleted** record → "<field label> غير موجود أو محذوف"
+- `DOES_NOT_EXIST` = an id in the body points to a missing **or deleted** record → "<field label> غير موجود أو محذوف"
   (e.g. "الفرع غير موجود أو محذوف"). Forms with dropdowns (Products, ProductStock, Users) then keep the form open
   with the error, clear that choice and call `onRefreshLists()` → the page's silent `refresh()`, so the deleted
   item disappears from the Select.
-- `BAD_REQUEST` + field `branchId` (Users) → "فرع المستخدم يجب أن يكون نفس فرع الموظف" (UPDATE_3 PART 3).
+- `BAD_REQUEST` + field `branchId` (Users) → "فرع المستخدم يجب أن يكون نفس فرع الموظف".
   Never show raw English backend messages to the user. Add new codes/field labels to the maps when new docs arrive.
 
 ### Formatting — `utils/format.js`
@@ -344,6 +392,12 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `LoadingState`, `ErrorState`, `EmptyState` | the page states (ErrorState has a retry button)                               |
 | `BalanceCell`                              | opening balance in a table: amount + "مدين"/"دائن" badge + meaning line        |
 | `BalancePreview`                           | under a balance input: sign hint + live preview "سيتم تسجيله: ..."            |
+| `StatusBadge`                              | Week 2 document status: `<StatusBadge status="POSTED" />` → "مُرحّل" (fixed color, see §8); `<StatusBadge expired />` → "منتهي" (quotation `isExpired`) |
+| `Pagination`                               | under a paginated table: "إجمالي: N", rows per page (20 / 50 / 100), "صفحة X من Y", السابق / التالي — props `meta`, `onPageChange`, `onPageSizeChange` (from `usePaginatedData`) |
+
+Week 2 document pieces still to build **with the first document page** (Purchase quotations), not before:
+`LinesTable` (lines + highlight row from `getLineError`), `TotalsBox` (server totals), `DocumentActions`
+(post / cancel / delete / edit from the state machines, each with a confirmation).
 
 Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title, subtitle, action button slot).
 
@@ -379,12 +433,24 @@ Rules: pages never import or render `MainLayout`, Sidebar or Header. Add a new s
 | `green-*`, `amber-*`                                                      | success / warning only         |
 | `bg-sky-600` / `bg-violet-600` + `text-white`                             | sky = مدين (debit) · violet = دائن (credit) — reserved for debit/credit only, never used for anything else |
 
+**Document status colors** — only in `StatusBadge` (soft background + border + dark text, `rounded-full text-xs`;
+never the solid sky / violet of مدين / دائن):
+
+| Status                                   | Classes                                          | Meaning                          |
+| ---------------------------------------- | ------------------------------------------------ | -------------------------------- |
+| DRAFT مسودة                              | `border-slate-200 bg-slate-100 text-slate-700`   | saved, no effect yet             |
+| SENT مُرسل · ACCEPTED مقبول              | `border-blue-200 bg-primary-soft text-primary`   | quotation moving forward         |
+| POSTED مُرحّل                            | `border-green-200 bg-green-50 text-green-700`    | final, stock moved               |
+| REJECTED مرفوض · CANCELLED ملغي          | `border-red-200 bg-red-50 text-red-700`          | stopped / reversed (muted red)   |
+| CONVERTED تم التحويل لفاتورة              | `border-purple-200 bg-purple-50 text-purple-700` | quotation became an invoice      |
+| منتهي (quotation `isExpired`)            | `border-amber-200 bg-amber-50 text-amber-700`    | warning only, blocks nothing     |
+
 Use `primary` tokens instead of `blue-600` so the brand color can change in one place. Style: clean, calm, professional ERP — light shadows, `rounded-lg`, no gradients, no heavy animations. Must work on desktop, laptop and tablet.
 
 ### Usability rules (users are accountants, not developers)
 
 - Every clickable element shows a pointer cursor (global rule in `index.css`); disabled shows `not-allowed`.
-- Colors have one fixed meaning and are never mixed: blue (`primary`) = main / safe action, red = destructive or leaving (delete, logout), green = success, amber = warning, gray/slate = neutral or cancel, sky / violet = مدين / دائن badges only. Never use red for a normal action or blue for a destructive one.
+- Colors have one fixed meaning and are never mixed: blue (`primary`) = main / safe action, red = destructive or leaving (delete, logout), green = success, amber = warning, gray/slate = neutral or cancel, sky / violet = مدين / دائن badges only, purple = CONVERTED status only (see the status table above). Never use red for a normal action or blue for a destructive one.
 - Every destructive or session-ending action (delete, logout, discarding unsaved changes) asks for confirmation with `ConfirmDialog`; the confirm button is red and names the action (e.g. "حذف الفرع", "تسجيل الخروج"), never a vague "تأكيد" or "نعم".
 - All interactive elements have clear hover and keyboard focus states.
 - Icon-only buttons have an Arabic `title` (tooltip) and `aria-label`, e.g. `title="تعديل"`.
@@ -435,6 +501,9 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 - Every new page gets an e2e test file: the page loads with no console errors, the main happy path works (e.g. list → add → edit → delete with confirmation), and the Arabic error / empty states show.
 - Every bug fix gets a regression test that fails before the fix and passes after it.
 - Tests fail on any console error or page error coming from the app.
+- Plain functions (`utils/`) may get Node-only unit checks (`e2e/errors.spec.js`: `test` from `@playwright/test`, no
+  page). Shared components and hooks are tested through real pages — never through a test-only route.
+- Stock movements are never deleted (backend rule): tests that add stock leave movements on soft-deleted test products.
 - Never weaken, skip or delete a test to make it pass; fix the real cause.
 - Tests that need the backend skip with a clear message when the API is down — tell Ahmed.
 - Do not change `../backend` or its data beyond what a test needs through the API.
@@ -447,7 +516,7 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 | Week | Backend docs | Frontend pages                                                                                                 | Status |
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
-| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users (+ UPDATE_3) | ✅     |
-| 2    | `doc/week2/` | Purchases / Sales invoices & returns, Quotations                                                               | ⏳     |
+| 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ✅     |
+| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ⏳ Currencies, Product units, Stock movements + Item card, Purchase quotations, Purchase invoices, Purchase returns | ⏳     |
 
 Update this table when a page is finished.

@@ -1,10 +1,10 @@
-// Product Stock (أرصدة المخزون) — the products of ONE warehouse with their quantity and cost price.
+// Product Stock (أرصدة المخزون) — the products of ONE warehouse with their quantity and average cost.
 // Same structure as pages/Branches, plus a warehouse Select at the top.
 // The selected warehouse lives in the URL (?inventory=<id>), so a refresh keeps it.
 // No totals / stock value here: calculations belong to the backend.
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
@@ -52,7 +52,8 @@ const COLUMNS = [
   { key: "category", label: "التصنيف", render: (row) => row.product?.category?.name ?? "-" },
   { key: "unit", label: "الوحدة", render: (row) => row.product?.primaryItemUnit?.name ?? "-" },
   { key: "quantity", label: "الكمية", render: renderQuantity },
-  { key: "costPrice", label: "سعر التكلفة", render: (row) => renderNumber(row.costPrice) },
+  // Week 2: the weighted average cost of one unit (purchases change it, stock out does not).
+  { key: "costPrice", label: "متوسط التكلفة", render: (row) => renderNumber(row.costPrice) },
 ];
 
 // Case-insensitive search in the product name, code and barcode.
@@ -109,7 +110,7 @@ function ProductStock() {
   const [successMessage, showSuccessMessage, hideSuccessMessage] = useAutoHideMessage();
   const [actionError, setActionError] = useState("");
 
-  // Add / edit form: recordToEdit = null → add mode
+  // Add / adjust form: recordToEdit = null → add mode
   const [formOpen, setFormOpen] = useState(false);
   const [recordToEdit, setRecordToEdit] = useState(null);
 
@@ -228,11 +229,11 @@ function ProductStock() {
                 <Button
                   variant="ghost"
                   className="px-2"
-                  title="تعديل"
-                  aria-label={`تعديل ${record.product?.name}`}
+                  title="تسوية الرصيد"
+                  aria-label={`تسوية رصيد ${record.product?.name}`}
                   onClick={() => openEdit(record)}
                 >
-                  <Pencil size={16} />
+                  <SlidersHorizontal size={16} />
                 </Button>
                 <Button
                   variant="danger-ghost"

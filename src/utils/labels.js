@@ -1,10 +1,11 @@
 // Enum values the API sends / accepts (English) + their Arabic labels for the UI.
 // Send and compare the `value`, show the `label`. The arrays work directly as Select options.
-// Source: ../backend/doc/FRONTEND_WEEK1_UPDATE_2.txt (PART 1.3 roles, PART 2 item types).
+// Sources: ../backend/doc/week1/ (item types, roles) and ../backend/doc/week2/numbering.txt (Week 2 enums).
 //
 // Usage:
 //   <Select options={ITEM_TYPES} ... />
 //   getLabel(ITEM_TYPES, product.itemType)  // "STOCK" → "مخزني"
+//   getLabel(MOVEMENT_TYPES, movement.type) // "ADJUSTMENT" → "تسوية"
 
 // Product itemType. STOCK is the default.
 export const ITEM_TYPES = [
@@ -21,13 +22,44 @@ export const ROLES = [
   { value: "USER", label: "مستخدم" },
 ];
 
+// Purchase quotation status (عرض سعر شراء). Changed only by the status / convert actions, never sent in a body.
+export const QUOTATION_STATUSES = [
+  { value: "DRAFT", label: "مسودة" },
+  { value: "SENT", label: "مُرسل" },
+  { value: "ACCEPTED", label: "مقبول" },
+  { value: "REJECTED", label: "مرفوض" },
+  { value: "CONVERTED", label: "تم التحويل لفاتورة" },
+];
+
+// Purchase invoice / purchase return status. Changed only by the post / cancel actions.
+export const DOCUMENT_STATUSES = [
+  { value: "DRAFT", label: "مسودة" },
+  { value: "POSTED", label: "مُرحّل" },
+  { value: "CANCELLED", label: "ملغي" },
+];
+
+// Purchase invoice payment type.
+export const PAYMENT_TYPES = [
+  { value: "CASH", label: "نقدي" },
+  { value: "CREDIT", label: "آجل" },
+];
+
+// Stock movement type (the lines of the item card / كارت الصنف).
+export const MOVEMENT_TYPES = [
+  { value: "OPENING", label: "رصيد افتتاحي" },
+  { value: "ADJUSTMENT", label: "تسوية" },
+  { value: "PURCHASE", label: "شراء" },
+  { value: "PURCHASE_CANCEL", label: "إلغاء فاتورة شراء" },
+  { value: "PURCHASE_RETURN", label: "مرتجع شراء" },
+  { value: "PURCHASE_RETURN_CANCEL", label: "إلغاء مرتجع شراء" },
+];
+
 // Arabic label of an enum value, or "-" when it is unknown / empty.
 export function getLabel(list, value) {
   return list.find((item) => item.value === value)?.label ?? "-";
 }
 
 // Opening balance (رصيد أول المدة): its sign says who owes whom, with the standard accounting labels.
-// Source: ../backend/doc/FRONTEND_WEEK1_UPDATE_3.txt (PART 1).
 //   customer:  +  → مدين  "على العميل لنا"   |   −  → دائن  "للعميل علينا"
 //   supplier:  +  → دائن  "علينا للمورد"     |   −  → مدين  "لنا عند المورد"
 const BALANCE_SIDES = {
