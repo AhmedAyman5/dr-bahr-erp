@@ -118,7 +118,9 @@ export async function createByApi(request, token, path, body) {
     headers: { Authorization: `Bearer ${token}` },
     data: body,
   });
-  expect(response.ok(), `creating test data with POST ${path} failed`).toBeTruthy();
+  // The status + body are in the message, so a failed setup shows WHY (e.g. 409 on a code).
+  const details = response.ok() ? "" : ` (${response.status()} ${await response.text()})`;
+  expect(response.ok(), `creating test data with POST ${path} failed${details}`).toBeTruthy();
   return (await response.json()).data;
 }
 

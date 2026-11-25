@@ -23,10 +23,14 @@ npm run dev       # start dev server (http://localhost:5173)
 npm run build     # production build — must pass before a task is done
 npm run lint      # lint
 npm run test:e2e   # browser tests (Playwright) — backend tests need Docker
+npm run seed:demo  # demo data (بيانات تجربة) through the API — run once the backend is up; safe to re-run
 ```
 
 Backend (Ahmed runs it, from `../backend`): `docker compose up -d` → API on `http://localhost:3000`. This local Docker backend is the ONLY backend (no production server yet).
 Default local login: `admin` / `admin123` (SUPERADMIN).
+Demo data (`scripts/seed-demo.mjs`): a realistic company (branches, warehouses, products + opening stock, customers,
+suppliers, employees, USD / EUR, 4 users with password `Demo@123`). Idempotent: it only creates what is missing
+(looked up by name / code / national ID / username), never edits or deletes, never touches EGP or `admin`.
 
 ---
 
@@ -117,7 +121,11 @@ Week 1 knowledge that only lived in them is already in our code and in this file
 ```text
 e2e/                          # browser tests (Playwright, see §10) — project root, next to src/
 ├── helpers.js                # shared test helpers (console-error check, fake session)
+├── global-setup.js           # database snapshot before / after the run (leftover check, §10)
 └── <name>.spec.js            # one test file per page / feature
+
+scripts/
+└── seed-demo.mjs             # demo data through the API (npm run seed:demo, §2)
 
 src/
 ├── main.jsx                  # BrowserRouter + App
@@ -504,6 +512,14 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 - Plain functions (`utils/`) may get Node-only unit checks (`e2e/errors.spec.js`: `test` from `@playwright/test`, no
   page). Shared components and hooks are tested through real pages — never through a test-only route.
 - Stock movements are never deleted (backend rule): tests that add stock leave movements on soft-deleted test products.
+- **The database is NOT empty**: it holds the demo data (`npm run seed:demo`) and EGP (the default currency).
+  Tests must never modify or delete demo records or EGP: they create their own tagged records and clean up ONLY those.
+  Never assume an empty list or "the only branch / warehouse": empty states, "auto-select the single warehouse" and
+  similar cases are tested with mocked API answers (`page.route`).
+- Leftover checks compare snapshots, never expect empty lists: `e2e/global-setup.js` snapshots every list (+ the
+  stock of every warehouse) before the run and fails the run if, after it, a record was left behind, or a record
+  that existed before was deleted or modified (`updatedAt` / `lastLoginDate` ignored).
+- Playwright runs with `workers: 4` (more parallel browsers overload the machine: `ERR_INSUFFICIENT_RESOURCES`).
 - Never weaken, skip or delete a test to make it pass; fix the real cause.
 - Tests that need the backend skip with a clear message when the API is down — tell Ahmed.
 - Do not change `../backend` or its data beyond what a test needs through the API.

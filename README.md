@@ -59,12 +59,36 @@ dr-bahr/
 | -------- | ---------- | ---------- |
 | `admin`  | `admin123` | SUPERADMIN |
 
+### بيانات تجربة (demo data)
+
+To try the whole system without typing data, fill the local database with a realistic demo company
+(3 branches, 5 warehouses, ~25 products with opening stock, customers, suppliers, employees, USD / EUR
+and 4 users). Run it **after the backend is up**:
+
+```bash
+npm run seed:demo
+```
+
+It works only through the API (logs in as `admin`), and it is safe to run again: it creates only what is
+missing and never edits or deletes anything (EGP stays the default currency, `admin` is not touched).
+
+| Username          | Password   | Role       |
+| ----------------- | ---------- | ---------- |
+| `mohamed.ali`     | `Demo@123` | ADMIN      |
+| `sara.hassan`     | `Demo@123` | ACCOUNTANT |
+| `mahmoud.ibrahim` | `Demo@123` | SALES      |
+| `youssef.adel`    | `Demo@123` | USER       |
+
+(They can log in, but until Week 5 only SUPERADMIN may open pages and call the API — the others see "ليس لديك صلاحية".)
+
 ## Scripts
 
 ```bash
-npm run dev      # development server
-npm run build    # production build
-npm run lint     # lint
+npm run dev        # development server
+npm run build      # production build
+npm run lint       # lint
+npm run test:e2e   # browser tests (Playwright) — the backend must be running
+npm run seed:demo  # demo data (بيانات تجربة) through the API
 ```
 
 ## Rules

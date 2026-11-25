@@ -5,6 +5,10 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   reporter: "list",
+  // 4, not the default (8 on this machine): 8 parallel browsers overload it (ERR_INSUFFICIENT_RESOURCES).
+  workers: 4,
+  // Snapshot of the database before the run, compared after it (no leftovers, demo data untouched).
+  globalSetup: "./e2e/global-setup.js",
   use: {
     baseURL: "http://localhost:5173",
     trace: "retain-on-failure",
