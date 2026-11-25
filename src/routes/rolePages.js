@@ -1,5 +1,5 @@
 // Which pages each role may open. The ONE place to change when roles get their pages (Week 5).
-// Source: ../backend/doc/FRONTEND_WEEK1_UPDATE_3.txt (PART 6.1).
+// Source: ../backend/doc/week1/00-overview.txt (roles: only SUPERADMIN can call the API for now).
 // Until Week 5 the backend answers 403 to every role except SUPERADMIN, so the others get nothing.
 //
 // Values are page paths from routes/AppRoutes.jsx ("/branches", "/stock", ...); "*" = every page.

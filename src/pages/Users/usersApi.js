@@ -1,5 +1,5 @@
 // All backend calls of the Users page.
-// Docs: ../backend/doc/week1/users.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 1.3 roles, PART 4 errors)
+// Docs: ../backend/doc/week1/users.txt (roles + errors) and ../backend/doc/week1/00-overview.txt
 // The API never returns passwords. Passwords are only sent, never logged or stored.
 import api from "../../services/api";
 import { optionalField } from "../../utils/body";

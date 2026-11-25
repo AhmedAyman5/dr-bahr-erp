@@ -26,7 +26,7 @@ import PasswordInput from "./PasswordInput";
 
 const FORM_ID = "user-form";
 const MIN_PASSWORD_LENGTH = 6;
-// Same rule as the backend (UPDATE_3, PART 4.1), checked after trim(): 3 to 30 characters,
+// Same rule as the backend (../backend/doc/week1/users.txt), checked after trim(): 3 to 30 characters,
 // only English letters, digits, dot, underscore and dash (no spaces, no Arabic, no "@").
 // The Login page does NOT use it: old accounts must still be able to log in.
 const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,30}$/;

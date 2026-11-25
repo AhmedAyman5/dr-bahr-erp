@@ -1,5 +1,5 @@
 // Request body helpers, used by the <page>Api.js body builders.
-// Source: ../backend/doc/FRONTEND_WEEK1_UPDATE_3.txt (PART 5: PATCH with null clears a field).
+// Source: ../backend/doc/week1/00-overview.txt (rule 5: PATCH with null clears a nullable field).
 //
 // Usage:
 //   address: optionalField(form.address, isEdit),

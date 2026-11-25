@@ -1,5 +1,5 @@
 // All backend calls of the Inventories (warehouses) page.
-// Docs: ../backend/doc/week1/inventory.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 3)
+// Docs: ../backend/doc/week1/inventory.txt
 import api from "../../services/api";
 
 // Only the documented fields. branchId goes in the URL (create only), never in the body.

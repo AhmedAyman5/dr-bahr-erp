@@ -1,5 +1,5 @@
 // All backend calls of the Employees page.
-// Docs: ../backend/doc/week1/employees.txt + FRONTEND_WEEK1_UPDATE_2.txt (PART 3)
+// Docs: ../backend/doc/week1/employees.txt
 import api from "../../services/api";
 import { optionalField } from "../../utils/body";
 

@@ -51,6 +51,7 @@ test("a SUPERADMIN sees every link and can open /branches", async ({ page }) => 
     "المخازن",
     "التصنيفات",
     "الوحدات",
+    "العملات",
     "الأصناف",
     "أرصدة المخزون",
     "العملاء",

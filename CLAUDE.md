@@ -517,6 +517,6 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
 | 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ✅     |
-| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ⏳ Currencies, Product units, Stock movements + Item card, Purchase quotations, Purchase invoices, Purchase returns | ⏳     |
+| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ⏳ Product units, Stock movements + Item card, Purchase quotations, Purchase invoices, Purchase returns | ⏳     |
 
 Update this table when a page is finished.

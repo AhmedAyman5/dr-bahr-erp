@@ -166,7 +166,7 @@ test.describe("with backend", () => {
     await dialog.getByLabel("الرصيد الافتتاحي").fill("-10.999");
     await save.click();
     await expect(dialog.getByText("الحد الأقصى رقمان بعد العلامة العشرية")).toBeVisible();
-    // A negative opening balance is allowed now (UPDATE_3): no minimum error.
+    // A negative opening balance is allowed (../backend/doc/week1/supplier.txt): no minimum error.
     await expect(dialog.getByText("القيمة يجب ألا تقل عن 0")).toHaveCount(0);
 
     await expect(dialog).toBeVisible();
@@ -196,7 +196,7 @@ test.describe("with backend", () => {
       await dialog.getByRole("button", { name: "حفظ" }).click();
       expect((await requestPromise).postDataJSON().openingBalance).toBe(item.sent);
 
-      // Accepted by the backend (it was a 400 before UPDATE_3 for −500).
+      // Accepted by the backend (negative balances are allowed, see ../backend/doc/week1/supplier.txt).
       await expect(dialog).toBeHidden();
       await expect(page.getByRole("alert").filter({ hasText: "تمت إضافة المورد بنجاح" })).toBeVisible();
       const cell = rowWith(page, name).getByRole("cell").nth(COL.openingBalance);

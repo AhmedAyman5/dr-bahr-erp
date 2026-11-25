@@ -383,7 +383,7 @@ test.describe("with backend", () => {
     await page.getByRole("button", { name: `تعديل ${employee.fullName}` }).click();
     await expect(hireDate).toHaveValue("2025-06-01");
 
-    // Emptying it saves (UPDATE_3: null clears the date) and the table shows "-".
+    // Emptying it saves (null clears the date, see ../backend/doc/week1/employees.txt) and the table shows "-".
     await hireDate.fill("");
     requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
     await dialog.getByRole("button", { name: "حفظ" }).click();

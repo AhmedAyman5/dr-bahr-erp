@@ -5,6 +5,7 @@ import { Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import Branches from "../pages/Branches/Branches";
 import Categories from "../pages/Categories/Categories";
+import Currencies from "../pages/Currencies/Currencies";
 import Customers from "../pages/Customers/Customers";
 import Employees from "../pages/Employees/Employees";
 import Home from "../pages/Home/Home";
@@ -48,6 +49,7 @@ function AppRoutes() {
           <Route path="inventories" element={<Inventories />} />
           <Route path="categories" element={<Categories />} />
           <Route path="units" element={<ItemUnits />} />
+          <Route path="currencies" element={<Currencies />} />
           <Route path="products" element={<Products />} />
           <Route path="stock" element={<ProductStock />} />
           <Route path="customers" element={<Customers />} />

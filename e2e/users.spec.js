@@ -350,7 +350,7 @@ test.describe("with backend", () => {
       const listsRefresh = page.waitForRequest((req) => req.url() === `${API_URL}/employees` && req.method() === "GET");
       await dialog.getByRole("button", { name: "حفظ" }).click();
 
-      // Real backend answer (UPDATE_3): 400 DOES_NOT_EXIST, field employeeId.
+      // Real backend answer (../backend/doc/week1/users.txt): 400 DOES_NOT_EXIST, field employeeId.
       await expect(dialog.getByRole("alert").filter({ hasText: "الموظف غير موجود أو محذوف" })).toBeVisible();
       await expect(dialog).toBeVisible();
       expect(sent).toEqual([`POST ${API_URL}/users`]);

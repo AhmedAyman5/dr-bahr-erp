@@ -6,6 +6,7 @@
 //     onCancel={() => setBranchToDelete(null)}
 //     loading={deleting}
 //   />
+// Destructive actions keep the red confirm button (default). A safe action passes confirmVariant="primary".
 import Button from "./Button";
 import Modal from "./Modal";
 
@@ -18,6 +19,7 @@ function ConfirmDialog({
   onConfirm,
   onCancel,
   loading = false,
+  confirmVariant = "danger",
 }) {
   return (
     <Modal
@@ -30,7 +32,7 @@ function ConfirmDialog({
           <Button variant="secondary" onClick={onCancel} disabled={loading}>
             {cancelLabel}
           </Button>
-          <Button variant="danger" onClick={onConfirm} loading={loading}>
+          <Button variant={confirmVariant} onClick={onConfirm} loading={loading}>
             {confirmLabel}
           </Button>
         </>
