@@ -12,6 +12,7 @@ import {
   setFakeSession,
   isApiUp,
   apiLogin,
+  createByApi,
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
@@ -26,14 +27,9 @@ test.describe("with backend", () => {
   let token;
   let tag; // unique per test, part of every branch name this test creates
 
-  // Creates a branch through the API and returns it.
-  async function createBranchByApi(request, body) {
-    const response = await request.post(`${API_URL}/branch`, {
-      headers: { Authorization: `Bearer ${token}` },
-      data: body,
-    });
-    expect(response.ok(), "creating a test branch failed").toBeTruthy();
-    return (await response.json()).data;
+  // Creates a branch through the API and returns it (a random-code collision is retried once: see helpers).
+  function createBranchByApi(request, body) {
+    return createByApi(request, token, "/branch", body);
   }
 
   test.beforeEach(async ({ page, request }) => {
@@ -394,5 +390,75 @@ test.describe("mocked API", () => {
     await expect(empty).toBeVisible();
     await empty.getByRole("button", { name: "إضافة فرع" }).click();
     await expect(page.getByRole("dialog", { name: "إضافة فرع" })).toBeVisible();
+  });
+
+  test.describe("random code collision", () => {
+    // The browser logs the failed POST itself; that is expected here.
+    test.use({ allowedConsoleErrors: [/status of 409/] });
+
+    // The backend picks a random code without checking it is free (issue sent to Mazen): the create can
+    // answer 409 ALREADY_EXISTS on "code". Same message on every page whose code comes from the server
+    // (utils/errors.js), so one page is enough here.
+    test('409 ALREADY_EXISTS on "code" → "تعذر إنشاء كود تلقائي" and the form stays open; saving again works', async ({
+      page,
+    }) => {
+      const headers = { "Access-Control-Allow-Origin": "*" };
+      const branches = [];
+      const sentBodies = [];
+      await setFakeSession(page);
+      await page.route(
+        (url) => url.pathname === "/branch",
+        (route) => {
+          if (route.request().method() !== "POST") {
+            return route.fulfill({ status: 200, headers, json: { message: "ok", data: branches } });
+          }
+          sentBodies.push(route.request().postDataJSON());
+          // 1st save: the random code is taken. 2nd save: a new code → created.
+          if (sentBodies.length === 1) {
+            return route.fulfill({
+              status: 409,
+              headers,
+              json: { statusCode: 409, message: "code already exists", error: "Conflict", code: "ALREADY_EXISTS", field: "code" },
+            });
+          }
+          const created = {
+            id: "b1",
+            name: "فرع الكود",
+            code: "branch-482913",
+            address: "طنطا",
+            createdAt: "2026-11-26T10:00:00.000Z",
+            updatedAt: "2026-11-26T10:00:00.000Z",
+            deletedAt: null,
+          };
+          branches.push(created);
+          return route.fulfill({ status: 201, headers, json: { message: "ok", data: created } });
+        },
+      );
+      await page.goto("/branches");
+
+      await page.getByRole("button", { name: "إضافة فرع" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "إضافة فرع" });
+      await dialog.getByLabel("الاسم").fill("فرع الكود");
+      await dialog.getByLabel("العنوان").fill("طنطا");
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+
+      // The clear Arabic message, never "الكود مستخدم بالفعل" (the user never typed a code).
+      await expect(dialog.getByRole("alert")).toHaveText("تعذر إنشاء كود تلقائي، اضغط حفظ مرة أخرى");
+      await expect(dialog.getByText("الكود مستخدم بالفعل")).toHaveCount(0);
+      // The form stays open with the user's input.
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel("الاسم")).toHaveValue("فرع الكود");
+      await expect(dialog.getByLabel("العنوان")).toHaveValue("طنطا");
+
+      // Saving again sends the same body and works.
+      await dialog.getByRole("button", { name: "حفظ" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole("alert").filter({ hasText: "تمت إضافة الفرع بنجاح" })).toBeVisible();
+      await expect(rowWith(page, "فرع الكود")).toContainText("branch-482913");
+      expect(sentBodies).toEqual([
+        { name: "فرع الكود", address: "طنطا" },
+        { name: "فرع الكود", address: "طنطا" },
+      ]);
+    });
   });
 });

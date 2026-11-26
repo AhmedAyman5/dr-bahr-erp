@@ -1,4 +1,4 @@
-// Top bar: logged-in username + logout (the only logout button in the app).
+// Top bar: logged-in username + font size menu (حجم الخط) + logout (the only logout button in the app).
 // Logout asks for confirmation first.
 // The username updates right away when the user edits their own account (Users page).
 import { useEffect, useState } from "react";
@@ -7,6 +7,7 @@ import { LogOut, UserCircle } from "lucide-react";
 import { clearSession, getUser, onSessionUserChange } from "../../services/session";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import FontSizeMenu from "./FontSizeMenu";
 
 function Header() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ function Header() {
       <div className="flex items-center gap-2 text-slate-700">
         <UserCircle size={24} className="text-slate-400" />
         <span className="text-sm font-medium">{user?.username}</span>
+        <FontSizeMenu />
       </div>
 
       <Button variant="danger-ghost" onClick={() => setConfirmOpen(true)}>

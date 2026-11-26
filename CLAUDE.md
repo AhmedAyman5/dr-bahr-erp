@@ -155,7 +155,7 @@ src/
 │   └── rolePages.js          # ROLE_PAGES (role → allowed pages) + canAccess(role, path)
 │
 ├── components/
-│   ├── layout/               # MainLayout, Sidebar, Header, PageHeader
+│   ├── layout/               # MainLayout, Sidebar, Header (+ FontSizeMenu), PageHeader
 │   └── ui/                   # shared UI kit (see §7) — reuse, don't re-create
 │
 ├── hooks/                    # shared hooks used by the list pages (see §5)
@@ -167,6 +167,7 @@ src/
 │   ├── body.js               # optionalField (request bodies: create → left out, edit → null)
 │   ├── dates.js              # DD/MM/YYYY ↔ "YYYY-MM-DD" (DateInput) + localDayStartISO / localDayEndISO (date-time filters)
 │   ├── errors.js             # getErrorMessage(error) → Arabic message, getLineError(error) → { lineIndex, field }
+│   ├── fontSize.js           # حجم الخط: getFontSize / setFontSize / applyFontSize (root font size, saved per device)
 │   ├── format.js             # formatNumber, formatMoney, formatDate, formatDateTime, formatTime, formatQuantity, formatSourceCode
 │   ├── labels.js             # enum values + Arabic labels (ITEM_TYPES, ROLES, statuses, MOVEMENT_TYPES, STOCK_IN/OUT_TYPES, formatReason, getBalanceSide, ...)
 │   └── money.js              # validateMoney, toMoneyNumber (money inputs in forms)
@@ -393,7 +394,23 @@ The backend does NOT prevent these yet, so the frontend must keep blocking them:
   with the error, clear that choice and call `onRefreshLists()` → the page's silent `refresh()`, so the deleted
   item disappears from the Select.
 - `BAD_REQUEST` + field `branchId` (Users) → "فرع المستخدم يجب أن يكون نفس فرع الموظف".
+- `ALREADY_EXISTS` + field `code` on a create → "تعذر إنشاء كود تلقائي، اضغط حفظ مرة أخرى" (form stays open). The
+  server picks a random 6-digit code without checking it is free (backend issue, asked Mazen); the user never typed a
+  code, so never "الكود مستخدم بالفعل". Currencies (the user types the code) keep their own message in `CurrencyFormModal`.
+  In tests / the seed script, `createByApi` (`e2e/helpers.js`) and `createOrSkip` retry such a create ONCE.
   Never show raw English backend messages to the user. Add new codes/field labels to the maps when new docs arrive.
+
+### Font size (حجم الخط) — `utils/fontSize.js` + `components/layout/FontSizeMenu.jsx`
+
+- Header button (`ALargeSmall` icon, title "حجم الخط") → menu صغير · متوسط · كبير (current one checked; keyboard:
+  arrows / Enter / Escape; closes on an outside click).
+- It sets the ROOT font size on `<html>`: 87.5% / 100% / 112.5% of the browser default = **14 / 16 / 18px** (متوسط =
+  the original design). Everything is in rem (Tailwind v4), so text, spacing and controls scale together.
+- Whole app, saved per device in localStorage (`"ui.fontSize"`: `small` / `medium` / `large`; unknown → medium),
+  not tied to the user account (logout keeps it). `main.jsx` applies it before the first render (no flash).
+- **Never hard-code px for text or spacing** (`text-[13px]`, `w-[220px]`, inline `style` sizes): use rem / Tailwind
+  sizes so the font size setting keeps working. (Lucide `size={n}` on icons is the one px value: icons keep their size.)
+- كبير may make a wide table overflow at 1280px: the `DataTable` fade then shows the hidden side; modals scroll inside.
 
 ### Formatting — `utils/format.js`
 
@@ -497,6 +514,7 @@ gray "تعديل تكلفة" (a cost-only change). Quantities: up to 4 decimals 
 `formatMoney(v, { maxDecimals: 4 })`; totals: `formatMoney` (2).
 
 Use `primary` tokens instead of `blue-600` so the brand color can change in one place. Style: clean, calm, professional ERP — light shadows, `rounded-lg`, no gradients, no heavy animations. Must work on desktop, laptop and tablet.
+The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it is the only cue that a wide table hides columns off-screen.
 
 ### Usability rules (users are accountants, not developers)
 
@@ -533,7 +551,8 @@ Use `primary` tokens instead of `blue-600` so the brand color can change in one 
 - Change only the files the task needs. Never rewrite or "clean up" unrelated pages.
 - Do not install packages without asking first (explain why it is needed).
 - Not allowed without explicit permission: Redux / Zustand / React Query / form libraries / TypeScript / CSS files per page / new architecture patterns.
-- No new axios instances, no manual Authorization headers, no `localStorage` outside `session.js`.
+- No new axios instances, no manual Authorization headers, no `localStorage` outside `session.js` (the session)
+  and `utils/fontSize.js` (the device's font size setting).
 - Unclear API behavior → ask. Missing endpoint → say so and suggest what the backend should add.
 - Keep comments short and useful; write code a junior React developer can follow.
 - **Git and GitHub only on request.** Ahmed owns the repo. Do not run any command that changes git state or GitHub (`git add`, `commit`, `push`, `pull`, `checkout`, `reset`, `merge`, `rebase`, `stash`, `gh ...`) unless Ahmed explicitly asks for it in the current message/prompt. Read-only `git status`, `git diff`, `git log` are fine anytime. By default: finish the task, then suggest a commit message — Ahmed tests, commits and pushes himself.

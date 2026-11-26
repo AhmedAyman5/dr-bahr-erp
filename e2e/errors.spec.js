@@ -72,6 +72,10 @@ test.describe("getErrorMessage", () => {
       "هذا الصنف موجود بالفعل في هذا المخزن، عدّل الكمية بدلاً من إضافته",
     );
     expect(getErrorMessage(apiError("BELONGS_TO_DELETED", "email"))).toBe("هذا البريد مرتبط بمستخدم محذوف");
+    // A server-generated (random) code that is already taken: the user never typed a code.
+    expect(getErrorMessage(apiError("ALREADY_EXISTS", "code"))).toBe("تعذر إنشاء كود تلقائي، اضغط حفظ مرة أخرى");
+    // Other fields keep the general text.
+    expect(getErrorMessage(apiError("ALREADY_EXISTS", "barcode"))).toBe("الباركود مستخدم بالفعل، اختر قيمة أخرى");
     // The same field inside a document line is NOT the stock message (SERVICE lines are allowed).
     expect(getErrorMessage(apiError("BAD_REQUEST", "lines.0.productId"))).toBe(
       "البند رقم 1: لا يمكن تنفيذ الطلب، راجع البيانات وحاول مرة أخرى",

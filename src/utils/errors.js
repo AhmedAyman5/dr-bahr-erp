@@ -104,6 +104,11 @@ const FIELD_AR = {
 // One exact message for a code + field pair (wins over the general ERROR_AR text).
 // Key: "<code>:<field>". Only header fields here: a line error ("lines.N.<field>") never matches.
 const CODE_FIELD_AR = {
+  // A create where the SERVER picks the code (branch, category, unit, customer, supplier, employee, product):
+  // it picks a random 6-digit code without checking it is free, so it can hit an existing one (backend
+  // issue reported to Mazen). The user never typed a code → never "الكود مستخدم بالفعل"; saving again
+  // picks a new code. (Currencies: the user types the code → CurrencyFormModal has its own message first.)
+  "ALREADY_EXISTS:code": "تعذر إنشاء كود تلقائي، اضغط حفظ مرة أخرى",
   // Product stock: the product is already in this warehouse.
   "ALREADY_EXISTS:productId": "هذا الصنف موجود بالفعل في هذا المخزن، عدّل الكمية بدلاً من إضافته",
   // Product stock: SERVICE products can't be put in a warehouse.

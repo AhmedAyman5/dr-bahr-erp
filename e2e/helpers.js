@@ -112,12 +112,25 @@ export async function apiLogin(request, username = "admin", password = "admin123
   return (await response.json()).data;
 }
 
+// True for 409 ALREADY_EXISTS on field "code": the server picked a random code that is already taken.
+// Backend issue (reported to Mazen): generateCode() in ../backend/src/utils/code-generator/code.generator.ts
+// picks a random 6-digit code without checking it is free. Sending the same body again picks a new code.
+export async function isRandomCodeCollision(response) {
+  if (response.status() !== 409) return false;
+  const body = await response.json().catch(() => null);
+  return body?.code === "ALREADY_EXISTS" && body?.field === "code";
+}
+
 // Creates a record through the API (e.g. path "/categories") and returns its data.
+// A random-code collision (see isRandomCodeCollision) is retried ONCE; any other error fails right away.
 export async function createByApi(request, token, path, body) {
-  const response = await request.post(`${API_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: body,
-  });
+  const post = () =>
+    request.post(`${API_URL}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: body,
+    });
+  let response = await post();
+  if (await isRandomCodeCollision(response)) response = await post();
   // The status + body are in the message, so a failed setup shows WHY (e.g. 409 on a code).
   const details = response.ok() ? "" : ` (${response.status()} ${await response.text()})`;
   expect(response.ok(), `creating test data with POST ${path} failed${details}`).toBeTruthy();

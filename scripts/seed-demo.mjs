@@ -252,11 +252,28 @@ function count(module, kind, note) {
   else summary[module][kind] += 1;
 }
 
+// 409 ALREADY_EXISTS on field "code": the server picked a random code that is already taken.
+// Backend issue (reported to Mazen): generateCode() in ../backend/src/utils/code-generator/code.generator.ts
+// picks a random 6-digit code without checking it is free. Sending the same body again picks a new code.
+function isRandomCodeCollision(error) {
+  return error instanceof ApiError && error.status === 409 && error.body?.code === "ALREADY_EXISTS" && error.body?.field === "code";
+}
+
+// POST that retries ONCE after a random-code collision; any other error is thrown right away.
+async function postWithCodeRetry(path, body) {
+  try {
+    return await post(path, body);
+  } catch (error) {
+    if (!isRandomCodeCollision(error)) throw error;
+    return post(path, body);
+  }
+}
+
 // Creates a record; a 409 (e.g. the key belongs to a DELETED record, which the backend never
 // restores) is reported as "skipped" instead of stopping the whole script.
 async function createOrSkip(module, label, path, body) {
   try {
-    const record = await post(path, body);
+    const record = await postWithCodeRetry(path, body);
     count(module, "created");
     return record;
   } catch (error) {
