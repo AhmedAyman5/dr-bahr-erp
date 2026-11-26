@@ -17,6 +17,7 @@ import {
   createByApi,
   deleteByTag,
   randomTag,
+  expectStackedCell,
   FAKE_USER,
   API_URL,
   API_DOWN_MESSAGE,
@@ -145,7 +146,8 @@ test.describe("with backend", () => {
 
     const adminRow = page.getByRole("row").filter({ has: page.getByText("(أنت)") });
     await expect(adminRow).toHaveCount(1);
-    await expect(adminRow.getByRole("cell").nth(0)).toHaveText(`${admin.username}(أنت)`);
+    // Cells: username (+ its email under it), role, employee, branch, last login.
+    await expectStackedCell(adminRow.getByRole("cell").nth(0), `${admin.username}(أنت)`);
     await expect(adminRow.getByRole("cell").nth(1)).toHaveText("مدير النظام");
 
     const deleteButton = adminRow.getByRole("button", { name: `حذف ${admin.username}` });
@@ -218,22 +220,21 @@ test.describe("with backend", () => {
     await expect(success).toBeVisible();
 
     const cells = rowWith(page, username).getByRole("cell");
-    await expect(cells.nth(0)).toHaveText(username);
-    await expect(cells.nth(0).locator("[dir=ltr]")).toHaveText(username);
+    // The email is stacked under the username; both stay LTR.
+    await expectStackedCell(cells.nth(0), username, email);
+    await expect(cells.nth(0).locator("[dir=ltr]")).toHaveText([username, email]);
     await expect(cells.nth(1)).toHaveText("مبيعات");
     await expect(cells.nth(2)).toHaveText("-");
     await expect(cells.nth(3)).toHaveText(branch.name);
-    await expect(cells.nth(4)).toHaveText(email);
-    await expect(cells.nth(4).locator("[dir=ltr]")).toHaveCount(1);
-    await expect(cells.nth(5)).toHaveText("لم يسجل الدخول بعد");
+    await expect(cells.nth(4)).toHaveText("لم يسجل الدخول بعد");
     // Another user's delete button is enabled.
     await expect(page.getByRole("button", { name: `حذف ${username}` })).toBeEnabled();
 
     // The new account works, and its last login shows after a reload.
     expect(await loginStatus(request, username, password)).toBe(201);
     await page.reload();
-    await expect(rowWith(page, username).getByRole("cell").nth(5)).not.toHaveText("لم يسجل الدخول بعد");
-    await expect(rowWith(page, username).getByRole("cell").nth(5)).toHaveText(/\d{4}/);
+    await expect(rowWith(page, username).getByRole("cell").nth(4)).not.toHaveText("لم يسجل الدخول بعد");
+    await expect(rowWith(page, username).getByRole("cell").nth(4)).toHaveText(/\d{4}/);
   });
 
   test("add with only the required fields: no empty email / employeeId / branchId keys", async ({ page }) => {
@@ -253,10 +254,10 @@ test.describe("with backend", () => {
 
     await expect(dialog).toBeHidden();
     const cells = rowWith(page, username).getByRole("cell");
+    await expectStackedCell(cells.nth(0), username, null); // no email
     await expect(cells.nth(1)).toHaveText("مستخدم");
     await expect(cells.nth(2)).toHaveText("-");
     await expect(cells.nth(3)).toHaveText("-");
-    await expect(cells.nth(4)).toHaveText("-");
   });
 
   test("validation: Arabic errors for every rule and no request is sent", async ({ page }) => {
@@ -399,7 +400,7 @@ test.describe("with backend", () => {
 
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل المستخدم بنجاح" })).toBeVisible();
-    await expect(rowWith(page, user.username).getByRole("cell").nth(4)).toHaveText(newEmail);
+    await expectStackedCell(rowWith(page, user.username).getByRole("cell").nth(0), user.username, newEmail);
     // The API agrees: email changed, the old link is kept.
     const saved = (await (await getUserById(request, user.id)).json()).data;
     expect(saved).toMatchObject({ email: newEmail, employeeId: employee.id });
@@ -608,7 +609,7 @@ test.describe("with backend", () => {
     await expect(dialog).toBeHidden();
     await expect(cells.nth(2)).toHaveText("-");
     await expect(cells.nth(3)).toHaveText("-");
-    await expect(cells.nth(4)).toHaveText("-");
+    await expectStackedCell(cells.nth(0), user.username, null); // the email was cleared
 
     // The API agrees.
     const saved = (await (await getUserById(request, user.id)).json()).data;
@@ -937,9 +938,9 @@ test.describe("mocked API", () => {
       });
       await page.goto("/users");
 
-      await expect(rowWith(page, "never.logged").getByRole("cell").nth(5)).toHaveText("لم يسجل الدخول بعد");
-      await expect(rowWith(page, "logged.in").getByRole("cell").nth(5)).toHaveText("21 نوفمبر 2026 في 3:05 م");
-      await expect(rowWith(page, "logged.in").getByRole("cell").nth(4)).toHaveText("a@example.com");
+      await expect(rowWith(page, "never.logged").getByRole("cell").nth(4)).toHaveText("لم يسجل الدخول بعد");
+      await expect(rowWith(page, "logged.in").getByRole("cell").nth(4)).toHaveText("21 نوفمبر 2026 في 3:05 م");
+      await expectStackedCell(rowWith(page, "logged.in").getByRole("cell").nth(0), "logged.in", "a@example.com");
 
       const orphan = rowWith(page, "orphan.user").getByRole("cell");
       await expect(orphan.nth(2)).toHaveText("موظف محذوف");

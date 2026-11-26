@@ -10,11 +10,13 @@ import Customers from "../pages/Customers/Customers";
 import Employees from "../pages/Employees/Employees";
 import Home from "../pages/Home/Home";
 import Inventories from "../pages/Inventories/Inventories";
+import ItemCard from "../pages/ItemCard/ItemCard";
 import ItemUnits from "../pages/ItemUnits/ItemUnits";
 import Login from "../pages/Login/Login";
 import NotFound from "../pages/NotFound/NotFound";
 import ProductStock from "../pages/ProductStock/ProductStock";
 import Products from "../pages/Products/Products";
+import StockMovements from "../pages/StockMovements/StockMovements";
 import Suppliers from "../pages/Suppliers/Suppliers";
 import Users from "../pages/Users/Users";
 import ProtectedRoute from "./ProtectedRoute";
@@ -52,6 +54,8 @@ function AppRoutes() {
           <Route path="currencies" element={<Currencies />} />
           <Route path="products" element={<Products />} />
           <Route path="stock" element={<ProductStock />} />
+          <Route path="stock-movements" element={<StockMovements />} />
+          <Route path="item-card" element={<ItemCard />} />
           <Route path="customers" element={<Customers />} />
           <Route path="suppliers" element={<Suppliers />} />
           <Route path="employees" element={<Employees />} />

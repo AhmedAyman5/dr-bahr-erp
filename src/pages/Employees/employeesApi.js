@@ -22,7 +22,7 @@ function toEmployeeBody(form, isEdit) {
     fullName: form.fullName.trim(),
     nationalId: optionalField(form.nationalId, isEdit),
     jobTitle: optionalField(form.jobTitle, isEdit),
-    // hireDate comes from <input type="date"> as "YYYY-MM-DD".
+    // hireDate comes from DateInput as "YYYY-MM-DD".
     hireDate: optionalField(form.hireDate, isEdit),
   };
 }

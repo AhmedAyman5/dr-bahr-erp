@@ -180,6 +180,23 @@ export async function expectBalanceCell(cell, amount, label, meaning) {
   await expect(cell).toHaveText(`${amount}${label}${meaning}`);
 }
 
+// A StackedCell (src/components/ui/StackedCell.jsx): the main value + a small gray line under it.
+//   await expectStackedCell(cells.nth(COL.name), "فرشة", "أدوات العناية"); // both lines
+//   await expectStackedCell(cells.nth(COL.code), "PRD-1", null);           // no second line at all
+//   await expectStackedCell(cells.nth(COL.code), "PRD-1");                 // second line not checked
+// main / sub: exact text or a RegExp.
+export async function expectStackedCell(cell, main, sub) {
+  const lines = cell.locator(":scope > div > div");
+  await expect(lines.first()).toHaveText(main);
+  if (sub === null) await expect(lines).toHaveCount(1);
+  else if (sub !== undefined) {
+    await expect(lines).toHaveCount(2);
+    await expect(lines.nth(1)).toHaveText(sub);
+    await expect(lines.nth(1)).toHaveClass(/text-xs/);
+    await expect(lines.nth(1)).toHaveClass(/text-slate-500/);
+  }
+}
+
 export async function getStoredToken(page) {
   return page.evaluate((tokenKey) => localStorage.getItem(tokenKey), TOKEN_KEY);
 }

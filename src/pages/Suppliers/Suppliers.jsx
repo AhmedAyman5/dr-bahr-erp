@@ -11,6 +11,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
+import StackedCell from "../../components/ui/StackedCell";
 import useAutoHideMessage from "../../hooks/useAutoHideMessage";
 import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
@@ -19,12 +20,21 @@ import SupplierFormModal from "./components/SupplierFormModal";
 
 // dir="ltr" keeps phone numbers and emails the right way round in RTL.
 // The opening balance shows the amount + "مدين" / "دائن" and its meaning (see BalanceCell).
+// Secondary info is stacked (StackedCell) so the table fits: name / contact person · phone / email.
+function renderContact(row) {
+  if (!row.phone && !row.email) return "-";
+  return (
+    <StackedCell
+      main={row.phone ? <span dir="ltr">{row.phone}</span> : "-"}
+      sub={row.email && <span dir="ltr">{row.email}</span>}
+    />
+  );
+}
+
 const COLUMNS = [
   { key: "code", label: "الكود" },
-  { key: "name", label: "الاسم" },
-  { key: "contactPerson", label: "الشخص المسؤول", render: (row) => row.contactPerson || "-" },
-  { key: "phone", label: "الهاتف", render: (row) => (row.phone ? <span dir="ltr">{row.phone}</span> : "-") },
-  { key: "email", label: "البريد الإلكتروني", render: (row) => (row.email ? <span dir="ltr">{row.email}</span> : "-") },
+  { key: "name", label: "الاسم", render: (row) => <StackedCell main={row.name} sub={row.contactPerson} /> },
+  { key: "contact", label: "الهاتف / البريد", render: renderContact },
   {
     key: "openingBalance",
     label: "الرصيد الافتتاحي",

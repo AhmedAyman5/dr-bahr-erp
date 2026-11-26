@@ -54,6 +54,24 @@ export const MOVEMENT_TYPES = [
   { value: "PURCHASE_RETURN_CANCEL", label: "إلغاء مرتجع شراء" },
 ];
 
+// Movement types that always bring stock IN (+) / take it OUT (−). ADJUSTMENT (تسوية) is in neither list:
+// it can be + or − (its quantity says). Used for the badge color (components/ui/MovementTypeBadge).
+export const STOCK_IN_TYPES = ["OPENING", "PURCHASE", "PURCHASE_RETURN_CANCEL"];
+export const STOCK_OUT_TYPES = ["PURCHASE_RETURN", "PURCHASE_CANCEL"];
+
+// Reasons the backend writes in English → Arabic. Stock from Week 1 got ONE opening movement with the
+// reason "Week 1 opening balance" (../backend/doc/week2/stock.txt, "Old (Week 1) stock").
+// Remove this when the backend sends the reason in Arabic (question for Mazen).
+const MOVEMENT_REASONS_AR = {
+  "Week 1 opening balance": "رصيد افتتاحي",
+};
+
+// Reason of a stock movement for the screen: formatReason("جرد") → "جرد" | empty → "-".
+export function formatReason(reason) {
+  if (!reason) return "-";
+  return MOVEMENT_REASONS_AR[reason] ?? reason;
+}
+
 // Arabic label of an enum value, or "-" when it is unknown / empty.
 export function getLabel(list, value) {
   return list.find((item) => item.value === value)?.label ?? "-";

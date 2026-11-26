@@ -3,7 +3,7 @@
 // The database is NOT empty: it holds the demo data (npm run seed:demo) and EGP. So "no test data
 // left" can't mean "the lists are empty". Instead:
 //   1. before the run: take a snapshot of every list (+ the stock of every warehouse, + the product
-//      units of every product);
+//      units of every product, + the item card of every product in every warehouse);
 //   2. after the run (the returned function = global teardown): take it again and compare.
 // The run fails when a test
 //   - left a record behind        (in "after", not in "before"),
@@ -71,6 +71,18 @@ async function takeSnapshot(warehouseIds, productIds) {
     const records = snapshot["/products"].has(id) ? await getList(token, path) : [];
     snapshot[path] = new Map(records.map((record) => [record.itemUnitId, fingerprint(record)]));
   }
+  // Item cards (Week 2): per product × warehouse, the number of movements + the last balance.
+  // Movements are never deleted, so a test that moved demo stock shows up here as "modified".
+  // The item card also works for a product / warehouse deleted during the run (the list reports that).
+  const cards = new Map();
+  for (const productId of productIds ?? snapshot["/products"].keys()) {
+    for (const warehouseId of warehouseIds ?? snapshot["/inventory"].keys()) {
+      const card = await getList(token, `/stock-movements/item-card?productId=${productId}&warehouseId=${warehouseId}`);
+      const lastBalance = card.movements.at(-1)?.balanceAfter ?? null;
+      cards.set(`${productId} in ${warehouseId}`, fingerprint({ movements: card.movements.length, lastBalance }));
+    }
+  }
+  snapshot["/stock-movements/item-card"] = cards;
   return snapshot;
 }
 

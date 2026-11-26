@@ -16,6 +16,7 @@ import {
   createByApi,
   deleteByTag,
   randomTag,
+  expectStackedCell,
   API_URL,
   API_DOWN_MESSAGE,
 } from "./helpers";
@@ -117,7 +118,8 @@ test.describe("with backend", () => {
     await dialog.getByLabel("الاسم بالكامل").fill(fullName);
     await dialog.getByLabel("الرقم القومي").fill(nationalId);
     await dialog.getByLabel("الوظيفة").fill("  مندوب مبيعات  ");
-    await dialog.getByLabel("تاريخ التعيين").fill("2025-03-15");
+    // DateInput: typed as DD/MM/YYYY, sent as "YYYY-MM-DD".
+    await dialog.getByLabel("تاريخ التعيين").fill("15/03/2025");
     await dialog.getByRole("button", { name: "حفظ" }).click();
     await expect(dialog.getByText("الفرع مطلوب")).toBeVisible();
     expect(sent).toEqual([]);
@@ -147,12 +149,13 @@ test.describe("with backend", () => {
     const row = rowWith(page, fullName);
     await expect(row).toHaveCount(1);
     const cells = row.getByRole("cell");
+    // Cells: code, name (+ the job title under it), branch, national ID, hire date.
     await expect(cells.nth(0)).toHaveText(/^EMP-/);
+    await expectStackedCell(cells.nth(1), fullName, "مندوب مبيعات");
     await expect(cells.nth(2)).toHaveText(branch.name);
-    await expect(cells.nth(3)).toHaveText("مندوب مبيعات");
-    await expect(cells.nth(4)).toHaveText(nationalId);
-    await expect(cells.nth(4).locator("[dir=ltr]")).toHaveCount(1);
-    await expect(cells.nth(5)).toHaveText("15 مارس 2025");
+    await expect(cells.nth(3)).toHaveText(nationalId);
+    await expect(cells.nth(3).locator("[dir=ltr]")).toHaveCount(1);
+    await expect(cells.nth(4)).toHaveText("15 مارس 2025");
 
     // The success message hides by itself after ~4 seconds.
     await expect(success).toBeHidden({ timeout: 7000 });
@@ -173,9 +176,9 @@ test.describe("with backend", () => {
 
     await expect(dialog).toBeHidden();
     const cells = rowWith(page, fullName).getByRole("cell");
+    await expectStackedCell(cells.nth(1), fullName, null); // no job title
     await expect(cells.nth(3)).toHaveText("-");
     await expect(cells.nth(4)).toHaveText("-");
-    await expect(cells.nth(5)).toHaveText("-");
   });
 
   test("validation: name required, national ID must be exactly 14 digits — Arabic errors, no request", async ({
@@ -277,7 +280,7 @@ test.describe("with backend", () => {
     await expect(dialog.getByLabel("الاسم بالكامل")).toBeFocused();
     await expect(dialog.getByLabel("الرقم القومي")).toHaveValue(employee.nationalId);
     await expect(dialog.getByLabel("الوظيفة")).toHaveValue("محاسب");
-    await expect(dialog.getByLabel("تاريخ التعيين")).toHaveValue("2025-01-01");
+    await expect(dialog.getByLabel("تاريخ التعيين")).toHaveValue("01/01/2025");
 
     await dialog.getByLabel("الاسم بالكامل").fill(newName);
     await dialog.getByLabel("الرقم القومي").fill(newNationalId);
@@ -297,10 +300,10 @@ test.describe("with backend", () => {
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الموظف بنجاح" })).toBeVisible();
     const cells = rowWith(page, newName).getByRole("cell");
     await expect(cells.nth(0)).toHaveText(employee.code);
+    await expectStackedCell(cells.nth(1), newName, "مدير فرع");
     await expect(cells.nth(2)).toHaveText(branch.name);
-    await expect(cells.nth(3)).toHaveText("مدير فرع");
-    await expect(cells.nth(4)).toHaveText(newNationalId);
-    await expect(cells.nth(5)).toHaveText("1 يناير 2025");
+    await expect(cells.nth(3)).toHaveText(newNationalId);
+    await expect(cells.nth(4)).toHaveText("1 يناير 2025");
     await expect(rowWith(page, employee.fullName)).toHaveCount(0);
   });
 
@@ -340,9 +343,9 @@ test.describe("with backend", () => {
       await expect(dialog).toBeHidden();
       await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الموظف بنجاح" })).toBeVisible();
       const cells = rowWith(page, employee.fullName).getByRole("cell");
+      await expectStackedCell(cells.nth(1), employee.fullName, null); // the job title was cleared
       await expect(cells.nth(3)).toHaveText("-");
       await expect(cells.nth(4)).toHaveText("-");
-      await expect(cells.nth(5)).toHaveText("-");
     }
 
     // The API agrees: both have no national ID, job title or hire date.
@@ -363,25 +366,25 @@ test.describe("with backend", () => {
       hireDate: "2024-12-31",
     });
     await page.goto("/employees");
-    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(5)).toHaveText("31 ديسمبر 2024");
+    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(4)).toHaveText("31 ديسمبر 2024");
 
     await page.getByRole("button", { name: `تعديل ${employee.fullName}` }).click();
     const dialog = page.getByRole("dialog", { name: "تعديل الموظف" });
     const hireDate = dialog.getByLabel("تاريخ التعيين");
-    await expect(hireDate).toHaveValue("2024-12-31");
+    await expect(hireDate).toHaveValue("31/12/2024");
 
     // Changing it saves.
-    await hireDate.fill("2025-06-01");
+    await hireDate.fill("01/06/2025");
     let requestPromise = page.waitForRequest((req) => req.method() === "PATCH");
     await dialog.getByRole("button", { name: "حفظ" }).click();
     expect((await requestPromise).postDataJSON().hireDate).toBe("2025-06-01");
 
     await expect(dialog).toBeHidden();
-    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(5)).toHaveText("1 يونيو 2025");
+    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(4)).toHaveText("1 يونيو 2025");
 
     // Opening the form again shows the new date unchanged.
     await page.getByRole("button", { name: `تعديل ${employee.fullName}` }).click();
-    await expect(hireDate).toHaveValue("2025-06-01");
+    await expect(hireDate).toHaveValue("01/06/2025");
 
     // Emptying it saves (null clears the date, see ../backend/doc/week1/employees.txt) and the table shows "-".
     await hireDate.fill("");
@@ -390,7 +393,7 @@ test.describe("with backend", () => {
     expect((await requestPromise).postDataJSON().hireDate).toBeNull();
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الموظف بنجاح" })).toBeVisible();
-    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(5)).toHaveText("-");
+    await expect(rowWith(page, employee.fullName).getByRole("cell").nth(4)).toHaveText("-");
 
     // The API agrees, and the form opens with an empty date.
     const response = await request.get(`${API_URL}/employees/${employee.id}`, {
@@ -516,11 +519,11 @@ test.describe("with backend", () => {
     // Add form: only a hire date counts as a change.
     await page.getByRole("button", { name: "إضافة موظف" }).first().click();
     const addForm = page.getByRole("dialog", { name: "إضافة موظف" });
-    await addForm.getByLabel("تاريخ التعيين").fill("2025-02-02");
+    await addForm.getByLabel("تاريخ التعيين").fill("02/02/2025");
     await addForm.getByRole("button", { name: "إلغاء" }).click();
     await expect(discard).toBeVisible();
     await discard.getByRole("button", { name: "إلغاء" }).click();
-    await expect(addForm.getByLabel("تاريخ التعيين")).toHaveValue("2025-02-02");
+    await expect(addForm.getByLabel("تاريخ التعيين")).toHaveValue("02/02/2025");
 
     await page.keyboard.press("Escape");
     await discard.getByRole("button", { name: "تجاهل التغييرات" }).click();
@@ -600,10 +603,10 @@ test.describe("mocked API", () => {
 
       const cells = rowWith(page, "موظف وهمي").getByRole("cell");
       await expect(cells.nth(0)).toHaveText("EMP-000001");
+      await expectStackedCell(cells.nth(1), "موظف وهمي", "محاسب");
       await expect(cells.nth(2)).toHaveText("فرع وهمي");
-      await expect(cells.nth(3)).toHaveText("محاسب");
-      await expect(cells.nth(4)).toHaveText("29901011234567");
-      await expect(cells.nth(5)).toHaveText("1 يناير 2025");
+      await expect(cells.nth(3)).toHaveText("29901011234567");
+      await expect(cells.nth(4)).toHaveText("1 يناير 2025");
     });
   });
 
@@ -620,10 +623,10 @@ test.describe("mocked API", () => {
       });
       await page.goto("/employees");
 
-      await expect(rowWith(page, "موظف نيويورك").getByRole("cell").nth(5)).toHaveText("1 يناير 2025");
+      await expect(rowWith(page, "موظف نيويورك").getByRole("cell").nth(4)).toHaveText("1 يناير 2025");
       await page.getByRole("button", { name: "تعديل موظف نيويورك" }).click();
       const dialog = page.getByRole("dialog", { name: "تعديل الموظف" });
-      await expect(dialog.getByLabel("تاريخ التعيين")).toHaveValue("2025-01-01");
+      await expect(dialog.getByLabel("تاريخ التعيين")).toHaveValue("01/01/2025");
     });
   });
 
@@ -672,7 +675,7 @@ test.describe("mocked API", () => {
     const orphanCell = rowWith(page, "موظف يتيم").getByRole("cell").nth(2);
     await expect(orphanCell).toHaveText("فرع محذوف");
     await expect(orphanCell.getByText("فرع محذوف")).toHaveClass(/text-slate-400/);
-    await expect(rowWith(page, "موظف يتيم").getByRole("cell").nth(5)).toHaveText("-");
+    await expect(rowWith(page, "موظف يتيم").getByRole("cell").nth(4)).toHaveText("-");
 
     await page.getByRole("button", { name: "تعديل موظف يتيم" }).click();
     const dialog = page.getByRole("dialog", { name: "تعديل الموظف" });

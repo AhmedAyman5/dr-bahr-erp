@@ -14,6 +14,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
+import StackedCell from "../../components/ui/StackedCell";
 import Select from "../../components/ui/Select";
 import useAutoHideMessage from "../../hooks/useAutoHideMessage";
 import useLoadData from "../../hooks/useLoadData";
@@ -43,13 +44,29 @@ function renderItemType(row) {
   );
 }
 
+// Secondary info is stacked under the main value (StackedCell) so the table fits without scrolling:
+// code / barcode · name / category · unit / type.
 const COLUMNS = [
-  { key: "code", label: "الكود" },
-  { key: "barcode", label: "الباركود", render: (row) => (row.barcode ? <span dir="ltr">{row.barcode}</span> : "-") },
-  { key: "name", label: "الاسم" },
-  { key: "category", label: "التصنيف", render: (row) => row.category?.name ?? "-" },
-  { key: "primaryItemUnit", label: "الوحدة", render: (row) => row.primaryItemUnit?.name ?? "-" },
-  { key: "itemType", label: "النوع", render: renderItemType },
+  {
+    key: "code",
+    label: "الكود",
+    render: (row) => <StackedCell main={row.code} sub={row.barcode && <span dir="ltr">{row.barcode}</span>} />,
+  },
+  {
+    key: "name",
+    label: "الاسم",
+    render: (row) => (
+      <StackedCell
+        main={<span className="block max-w-56 whitespace-normal">{row.name}</span>}
+        sub={row.category?.name}
+      />
+    ),
+  },
+  {
+    key: "primaryItemUnit",
+    label: "الوحدة",
+    render: (row) => <StackedCell main={row.primaryItemUnit?.name ?? "-"} sub={renderItemType(row)} />,
+  },
   { key: "retailPrice", label: "سعر التجزئة", render: (row) => renderPrice(row.retailPrice) },
   { key: "wholesalePrice", label: "سعر الجملة", render: (row) => renderPrice(row.wholesalePrice) },
   { key: "bulkWholesalePrice", label: "سعر جملة الجملة", render: (row) => renderPrice(row.bulkWholesalePrice) },

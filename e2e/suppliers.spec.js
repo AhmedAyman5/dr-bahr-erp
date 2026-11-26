@@ -15,13 +15,15 @@ import {
   createByApi,
   deleteByTag,
   expectBalanceCell,
+  expectStackedCell,
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
 } from "./helpers";
 
-// Column order in the table.
-const COL = { code: 0, name: 1, contactPerson: 2, phone: 3, email: 4, openingBalance: 5 };
+// Column order in the table. Stacked (StackedCell, so the table fits without scrolling):
+// the contact person under the name; "الهاتف / البريد" = the phone with the email under it ("-" when both are empty).
+const COL = { code: 0, name: 1, contact: 2, openingBalance: 3 };
 
 const SEARCH_PLACEHOLDER = "ابحث بالاسم أو الكود أو الهاتف أو الشخص المسؤول أو البريد";
 
@@ -113,9 +115,9 @@ test.describe("with backend", () => {
 
     const cells = rowWith(page, name).getByRole("cell");
     await expect(cells.nth(COL.code)).toHaveText(/^SUP-\d+$/);
-    await expect(cells.nth(COL.contactPerson)).toHaveText("أحمد محمد");
-    await expect(cells.nth(COL.phone)).toHaveText("01001234567");
-    await expect(cells.nth(COL.email)).toHaveText(email);
+    await expectStackedCell(cells.nth(COL.name), name, "أحمد محمد");
+    await expectStackedCell(cells.nth(COL.contact), "01001234567", email);
+    await expect(cells.nth(COL.contact).locator("span[dir=ltr]")).toHaveText(["01001234567", email]);
     await expectBalanceCell(cells.nth(COL.openingBalance), "1,500.00", "دائن", "علينا للمورد");
 
     await expect(success).toBeHidden({ timeout: 7000 });
@@ -139,8 +141,9 @@ test.describe("with backend", () => {
 
     await expect(page.getByRole("alert").filter({ hasText: "تمت إضافة المورد بنجاح" })).toBeVisible();
     const cells = rowWith(page, name).getByRole("cell");
-    await expect(cells.nth(COL.email)).toHaveText("-");
-    await expect(cells.nth(COL.contactPerson)).toHaveText("-");
+    // No contact person, phone or email: the name alone, "-" for the contact.
+    await expectStackedCell(cells.nth(COL.name), name, null);
+    await expect(cells.nth(COL.contact)).toHaveText("-");
     // 0 → the amount only, no مدين / دائن badge.
     await expectBalanceCell(cells.nth(COL.openingBalance), "0.00");
   });
@@ -307,9 +310,8 @@ test.describe("with backend", () => {
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل المورد بنجاح" })).toBeVisible();
     const cells = rowWith(page, newName).getByRole("cell");
     await expect(cells.nth(COL.code)).toHaveText(supplier.code);
-    await expect(cells.nth(COL.phone)).toHaveText("-");
-    await expect(cells.nth(COL.email)).toHaveText("-");
-    await expect(cells.nth(COL.contactPerson)).toHaveText("-");
+    await expectStackedCell(cells.nth(COL.name), newName, null);
+    await expect(cells.nth(COL.contact)).toHaveText("-");
     await expectBalanceCell(cells.nth(COL.openingBalance), "99.90", "دائن", "علينا للمورد");
 
     // The API agrees: the four fields are really cleared (null, not "").
@@ -464,8 +466,8 @@ test.describe("mocked API", () => {
 
       const cells = rowWith(page, "مورد وهمي").getByRole("cell");
       await expect(cells.nth(COL.code)).toHaveText("SUP-000001");
-      await expect(cells.nth(COL.contactPerson)).toHaveText("-");
-      await expect(cells.nth(COL.email)).toHaveText("-");
+      await expectStackedCell(cells.nth(COL.name), "مورد وهمي", null);
+      await expect(cells.nth(COL.contact)).toHaveText("-");
       await expectBalanceCell(cells.nth(COL.openingBalance), "1,234,567.50", "دائن", "علينا للمورد");
       await expect(page.getByText("عدد الموردين: 1")).toBeVisible();
     });

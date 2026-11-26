@@ -4,7 +4,7 @@
 // No totals / stock value here: calculations belong to the backend.
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ClipboardList, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
@@ -226,6 +226,16 @@ function ProductStock() {
             rows={filteredStock}
             renderActions={(record) => (
               <>
+                {/* Every movement of this product in this warehouse (pages/ItemCard). */}
+                <Button
+                  variant="ghost"
+                  className="px-2"
+                  to={`/item-card?product=${record.productId}&inventory=${activeId}`}
+                  title="كارت الصنف"
+                  aria-label={`كارت الصنف: ${record.product?.name}`}
+                >
+                  <ClipboardList size={16} />
+                </Button>
                 <Button
                   variant="ghost"
                   className="px-2"

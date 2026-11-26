@@ -14,6 +14,7 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import StackedCell from "../../components/ui/StackedCell";
 import useAutoHideMessage from "../../hooks/useAutoHideMessage";
 import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
@@ -112,13 +113,13 @@ function Employees() {
 
   const columns = [
     { key: "code", label: "الكود" },
-    { key: "fullName", label: "الاسم" },
+    // The job title is stacked under the name (StackedCell) so the table fits without scrolling.
+    { key: "fullName", label: "الاسم", render: (row) => <StackedCell main={row.fullName} sub={row.jobTitle} /> },
     {
       key: "branchId",
       label: "الفرع",
       render: (row) => findBranchName(row.branchId) ?? <span className="text-slate-400">فرع محذوف</span>,
     },
-    { key: "jobTitle", label: "الوظيفة", render: (row) => row.jobTitle || "-" },
     {
       key: "nationalId",
       label: "الرقم القومي",

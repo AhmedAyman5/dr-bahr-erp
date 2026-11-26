@@ -20,21 +20,20 @@ import {
   createByApi,
   deleteByTag,
   randomTag,
+  expectStackedCell,
   API_URL,
   API_DOWN_MESSAGE,
 } from "./helpers";
 
-// Column order in the table.
+// Column order in the table. Stacked (StackedCell, so the table fits without scrolling):
+// the barcode under the code, the category under the name, the type under the unit.
 const COL = {
   code: 0,
-  barcode: 1,
-  name: 2,
-  category: 3,
-  unit: 4,
-  type: 5,
-  retailPrice: 6,
-  wholesalePrice: 7,
-  bulkWholesalePrice: 8,
+  name: 1,
+  unit: 2,
+  retailPrice: 3,
+  wholesalePrice: 4,
+  bulkWholesalePrice: 5,
 };
 
 const PRICE_ORDER_WARNING =
@@ -252,11 +251,10 @@ test.describe("with backend", () => {
     const row = rowWith(page, name);
     await expect(row).toHaveCount(1);
     const cells = row.getByRole("cell");
-    await expect(cells.nth(COL.code)).toHaveText(/^PRD-\d+$/);
-    await expect(cells.nth(COL.barcode)).toHaveText("-");
-    await expect(cells.nth(COL.category)).toHaveText(category.name);
-    await expect(cells.nth(COL.unit)).toHaveText(unit.name);
-    await expect(cells.nth(COL.type)).toHaveText("مخزني");
+    // No barcode → no second line under the code.
+    await expectStackedCell(cells.nth(COL.code), /^PRD-\d+$/, null);
+    await expectStackedCell(cells.nth(COL.name), name, category.name);
+    await expectStackedCell(cells.nth(COL.unit), unit.name, "مخزني");
     await expect(cells.nth(COL.retailPrice)).toHaveText("15.00");
     await expect(cells.nth(COL.wholesalePrice)).toHaveText("12.50");
     await expect(cells.nth(COL.bulkWholesalePrice)).toHaveText("10.00");
@@ -373,7 +371,7 @@ test.describe("with backend", () => {
     expect(body.itemType).toBe("SERVICE");
     expect(body.hasExpiryDate).toBe(false);
 
-    const badge = rowWith(page, name).getByRole("cell").nth(COL.type).getByText("خدمي");
+    const badge = rowWith(page, name).getByRole("cell").nth(COL.unit).getByText("خدمي");
     await expect(badge).toBeVisible();
     await expect(badge).toHaveClass(/bg-slate-100/);
   });
@@ -410,7 +408,7 @@ test.describe("with backend", () => {
     await categoryFilter.selectOption({ label: "كل التصنيفات" });
     await search.fill(`  ${barcode.toLowerCase()}  `);
     await expect(rowWith(page, stockA.name)).toHaveCount(1);
-    await expect(rowWith(page, stockA.name).getByRole("cell").nth(COL.barcode)).toHaveText(barcode);
+    await expectStackedCell(rowWith(page, stockA.name).getByRole("cell").nth(COL.code), /^PRD-\d+$/, barcode);
     await expect(page.getByText("عدد الأصناف: 1")).toBeVisible();
 
     // Search by code.
@@ -488,8 +486,8 @@ test.describe("with backend", () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الصنف بنجاح" })).toBeVisible();
     const cells = rowWith(page, newName).getByRole("cell");
-    await expect(cells.nth(COL.code)).toHaveText(product.code);
-    await expect(cells.nth(COL.unit)).toHaveText(otherUnit.name);
+    await expectStackedCell(cells.nth(COL.code), product.code);
+    await expectStackedCell(cells.nth(COL.unit), otherUnit.name, "مخزني");
     await expect(cells.nth(COL.retailPrice)).toHaveText("22.75");
     await expect(cells.nth(COL.bulkWholesalePrice)).toHaveText("15.1234");
     await expect(rowWith(page, product.name)).toHaveCount(0);
@@ -644,7 +642,8 @@ test.describe("with backend", () => {
 
       await expect(dialog).toBeHidden();
       await expect(page.getByRole("alert").filter({ hasText: "تم تعديل الصنف بنجاح" })).toBeVisible();
-      await expect(rowWith(page, product.name).getByRole("cell").nth(COL.barcode)).toHaveText("-");
+      // The barcode was cleared: no second line under the code any more.
+      await expectStackedCell(rowWith(page, product.name).getByRole("cell").nth(COL.code), product.code, null);
 
       const saved = (await (await getProductFromApi(request, product.id)).json()).data;
       expect(saved.barcode).toBeNull();
@@ -867,12 +866,11 @@ test.describe("mocked API", () => {
       await page.getByRole("button", { name: "إعادة المحاولة" }).click();
 
       const cells = rowWith(page, "صنف وهمي").getByRole("cell");
-      await expect(cells.nth(COL.code)).toHaveText("PRD-000001");
-      await expect(cells.nth(COL.barcode)).toHaveText("6221234567890");
-      await expect(cells.nth(COL.category)).toHaveText("تصنيف وهمي");
-      await expect(cells.nth(COL.unit)).toHaveText("وحدة وهمية");
-      await expect(cells.nth(COL.type)).toHaveText("مخزني");
-      await expect(cells.nth(COL.type).getByText("مخزني")).toHaveClass(/bg-primary-soft/);
+      await expectStackedCell(cells.nth(COL.code), "PRD-000001", "6221234567890");
+      await expect(cells.nth(COL.code).locator("span[dir=ltr]")).toHaveText("6221234567890");
+      await expectStackedCell(cells.nth(COL.name), "صنف وهمي", "تصنيف وهمي");
+      await expectStackedCell(cells.nth(COL.unit), "وحدة وهمية", "مخزني");
+      await expect(cells.nth(COL.unit).getByText("مخزني")).toHaveClass(/bg-primary-soft/);
       await expect(cells.nth(COL.retailPrice)).toHaveText("1,500.00");
       await expect(cells.nth(COL.wholesalePrice)).toHaveText("12.3456");
       await expect(cells.nth(COL.bulkWholesalePrice)).toHaveText("10.50");

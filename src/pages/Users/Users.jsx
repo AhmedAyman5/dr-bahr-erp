@@ -14,6 +14,7 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import SearchInput from "../../components/ui/SearchInput";
 import Select from "../../components/ui/Select";
+import StackedCell from "../../components/ui/StackedCell";
 import useAutoHideMessage from "../../hooks/useAutoHideMessage";
 import useLoadData from "../../hooks/useLoadData";
 import { getUser, updateSessionUser } from "../../services/session";
@@ -118,16 +119,24 @@ function Users() {
   }
 
   const columns = [
+    // The email is stacked under the username (StackedCell) so the table fits without scrolling.
     {
       key: "username",
       label: "اسم المستخدم",
       render: (row) => (
-        <span className="flex items-center gap-2">
-          <span dir="ltr">{row.username}</span>
-          {row.id === currentUserId && (
-            <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">(أنت)</span>
-          )}
-        </span>
+        <StackedCell
+          main={
+            <span className="flex items-center gap-2">
+              <span dir="ltr">{row.username}</span>
+              {row.id === currentUserId && (
+                <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
+                  (أنت)
+                </span>
+              )}
+            </span>
+          }
+          sub={row.email && <span dir="ltr">{row.email}</span>}
+        />
       ),
     },
     {
@@ -158,11 +167,6 @@ function Users() {
         if (!row.branchId) return "-";
         return findBranchName(row.branchId) ?? <span className="text-slate-400">فرع محذوف</span>;
       },
-    },
-    {
-      key: "email",
-      label: "البريد الإلكتروني",
-      render: (row) => (row.email ? <span dir="ltr">{row.email}</span> : "-"),
     },
     {
       key: "lastLoginDate",

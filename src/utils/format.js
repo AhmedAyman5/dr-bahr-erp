@@ -13,6 +13,29 @@ export function formatNumber(value) {
   return number.toLocaleString(LOCALE, { maximumFractionDigits: 4 });
 }
 
+// Stock quantities (always in the product's primary unit): up to 4 decimals, no forced decimals.
+// formatQuantity("1234.5") → "1,234.5"  |  "-24" → "-24"  |  "0.12345" → "0.1235"  |  empty / invalid → "-"
+// options.signed: a "+" before a positive value ("+120"), for the movements list.
+// Like formatMoney the sign is added by hand, so show it inside <span dir="ltr">.
+export function formatQuantity(value, options = {}) {
+  if (value === null || value === undefined || String(value).trim() === "") return "-";
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+
+  const rounded = Math.round(number * 10000) / 10000;
+  const text = Math.abs(rounded).toLocaleString(LOCALE, { maximumFractionDigits: 4 });
+  if (rounded < 0) return `-${text}`;
+  return options.signed && rounded > 0 ? `+${text}` : text;
+}
+
+// Document number of a stock movement: "PI-2026-000001", or "-" for OPENING / ADJUSTMENT (no document).
+// Plain text for now. It is ONE helper on purpose: when the purchase pages exist it can become a link
+// to the document (movement.sourceType + movement.sourceId).
+export function formatSourceCode(movement) {
+  return movement?.sourceCode || "-";
+}
+
 // formatDate("2026-11-21T01:36:50.897Z") → "21 نوفمبر 2026"  |  empty / invalid → "-"
 export function formatDate(value) {
   if (!value) return "-";
@@ -42,6 +65,17 @@ export function formatDateTime(value) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// formatTime("2026-11-21T13:05:00.000Z") → the time only, in local time, e.g. "3:05 م" (the time part of
+// formatDateTime). For tables that show the day and the time on two lines.  empty / invalid → "-"
+export function formatTime(value) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleTimeString(LOCALE, { hour: "numeric", minute: "2-digit" });
 }
 
 // formatMoney("1500") → "1,500.00"  |  "-250.5" → "-250.50"  |  empty / invalid → "-"

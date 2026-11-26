@@ -9,6 +9,7 @@
 import { useState } from "react";
 import Alert from "../../../components/ui/Alert";
 import Button from "../../../components/ui/Button";
+import DateInput from "../../../components/ui/DateInput";
 import Input from "../../../components/ui/Input";
 import Modal from "../../../components/ui/Modal";
 import Select from "../../../components/ui/Select";
@@ -17,7 +18,7 @@ import { createEmployee, updateEmployee } from "../employeesApi";
 
 const FORM_ID = "employee-form";
 
-// "2025-01-01T00:00:00.000Z" → "2025-01-01" for <input type="date">.
+// "2025-01-01T00:00:00.000Z" → "2025-01-01" for DateInput (shown as 01/01/2025).
 // The date part is used as is (no Date object), so the day never shifts with the time zone.
 function toDateInput(value) {
   return value ? value.slice(0, 10) : "";
@@ -35,6 +36,8 @@ function EmployeeFormModal({ employee, branches, defaultBranchId = "", onClose, 
 
   const [form, setForm] = useState(initialForm);
   const [fieldErrors, setFieldErrors] = useState({});
+  // true while تاريخ التعيين holds text that is not a real date (DateInput's flag): saving is blocked.
+  const [hireDateInvalid, setHireDateInvalid] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -50,6 +53,12 @@ function EmployeeFormModal({ employee, branches, defaultBranchId = "", onClose, 
     setFieldErrors({ ...fieldErrors, [name]: "" });
   }
 
+  function handleHireDateChange(value, { invalid }) {
+    setForm({ ...form, hireDate: value });
+    setHireDateInvalid(invalid);
+    setFieldErrors({ ...fieldErrors, hireDate: "" });
+  }
+
   function validate() {
     const errors = {};
     if (!isEdit && !form.branchId) errors.branchId = "الفرع مطلوب";
@@ -60,6 +69,7 @@ function EmployeeFormModal({ employee, branches, defaultBranchId = "", onClose, 
     if (nationalId && !/^\d{14}$/.test(nationalId)) {
       errors.nationalId = "الرقم القومي يجب أن يكون 14 رقماً";
     }
+    if (hireDateInvalid) errors.hireDate = "تاريخ غير صحيح";
 
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -148,7 +158,12 @@ function EmployeeFormModal({ employee, branches, defaultBranchId = "", onClose, 
           error={fieldErrors.nationalId}
         />
         <Input label="الوظيفة" name="jobTitle" value={form.jobTitle} onChange={handleChange} />
-        <Input label="تاريخ التعيين" name="hireDate" type="date" value={form.hireDate} onChange={handleChange} />
+        <DateInput
+          label="تاريخ التعيين"
+          value={form.hireDate}
+          onChange={handleHireDateChange}
+          error={fieldErrors.hireDate}
+        />
       </form>
     </Modal>
   );
