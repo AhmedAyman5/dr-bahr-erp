@@ -10,6 +10,7 @@ import {
   Building2,
   ClipboardList,
   Coins,
+  FileText,
   House,
   IdCard,
   Package,
@@ -47,6 +48,11 @@ const NAV_GROUPS = [
       { label: "حركات المخزون", path: "/stock-movements", icon: ArrowLeftRight },
       { label: "كارت الصنف", path: "/item-card", icon: ClipboardList },
     ],
+  },
+  {
+    // Week 2 documents. A link is also active on its sub-pages (/purchase-quotations/new, /:id, /:id/edit).
+    title: "المشتريات",
+    items: [{ label: "عروض أسعار الشراء", path: "/purchase-quotations", icon: FileText }],
   },
   {
     title: "العملاء والموردين",

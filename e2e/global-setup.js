@@ -10,6 +10,14 @@
 //   - deleted a record that existed before, e.g. demo data (in "before", not in "after"),
 //   - modified a record that existed before (its fields differ).
 // updatedAt / lastLoginDate are ignored: logging in as admin or a no-op save may touch them.
+// isExpired (quotations) is ignored too: the server computes it from today's date, so a run that crosses
+// midnight would see it change.
+//
+// Paginated Week 2 lists (PAGINATED_LISTS) are read page by page (pageSize 100).
+// One leftover is ALLOWED: a quotation converted to an invoice can never be deleted (backend rule, like stock
+// movements), so a NEW quotation with status CONVERTED whose notes contain "e2e-" may stay. The DRAFT invoice
+// it became is deleted by the test (DELETE /purchase-invoices/:id), like everything else the tests create.
+//
 // When the API is down the check is skipped (the backend tests skip themselves too).
 import { API_URL } from "./helpers.js";
 
@@ -26,7 +34,17 @@ const LISTS = [
   "/users",
 ];
 
-const IGNORED_FIELDS = new Set(["updatedAt", "lastLoginDate"]);
+// Week 2 document lists: data = { items, meta }.
+const PAGINATED_LISTS = ["/purchase-quotations", "/purchase-invoices"];
+
+const IGNORED_FIELDS = new Set(["updatedAt", "lastLoginDate", "isExpired"]);
+
+// The one allowed leftover (see the top of this file).
+function isAllowedLeftover(path, record) {
+  return (
+    path === "/purchase-quotations" && record.status === "CONVERTED" && String(record.notes ?? "").includes("e2e-")
+  );
+}
 
 // A stable text of a record without the ignored fields (also inside nested objects).
 function fingerprint(value) {
@@ -49,6 +67,16 @@ async function getList(token, path) {
   return (await response.json()).data;
 }
 
+// Every item of a paginated list (all pages).
+async function getAllPages(token, path) {
+  const items = [];
+  for (let page = 1; ; page += 1) {
+    const data = await getList(token, `${path}?page=${page}&pageSize=100`);
+    items.push(...data.items);
+    if (page >= data.meta.totalPages) return items;
+  }
+}
+
 // { "<path>": Map(id → fingerprint) }. warehouseIds / productIds: whose stock / units to include
 // (the "before" ones; left out → all current ones).
 async function takeSnapshot(warehouseIds, productIds) {
@@ -56,6 +84,10 @@ async function takeSnapshot(warehouseIds, productIds) {
   const snapshot = {};
   for (const path of LISTS) {
     const records = await getList(token, path);
+    snapshot[path] = new Map(records.map((record) => [record.id, fingerprint(record)]));
+  }
+  for (const path of PAGINATED_LISTS) {
+    const records = await getAllPages(token, path);
     snapshot[path] = new Map(records.map((record) => [record.id, fingerprint(record)]));
   }
   for (const id of warehouseIds ?? snapshot["/inventory"].keys()) {
@@ -91,7 +123,9 @@ function compare(before, after) {
   for (const [path, beforeRecords] of Object.entries(before)) {
     const afterRecords = after[path] ?? new Map();
     for (const [id, text] of afterRecords) {
-      if (!beforeRecords.has(id)) problems.push(`left behind ${path}: ${text}`);
+      if (!beforeRecords.has(id) && !isAllowedLeftover(path, JSON.parse(text))) {
+        problems.push(`left behind ${path}: ${text}`);
+      }
     }
     for (const [id, text] of beforeRecords) {
       if (!afterRecords.has(id)) problems.push(`deleted (existed before the run) ${path}: ${text}`);

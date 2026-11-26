@@ -129,6 +129,14 @@ const CODE_FIELD_AR = {
   "ALREADY_EXISTS:itemUnitId": "هذه الوحدة معرفة بالفعل لهذا الصنف",
   "DOES_NOT_EXIST:itemUnitId": "الوحدة غير موجودة أو محذوفة",
   "BELONGS_TO_DELETED:itemUnitId": "هذه الوحدة كانت مضافة وحُذفت، أضفها من جديد من زر إضافة وحدة",
+  // Week 2 documents (purchase-quotations.txt; invoices / returns use the same fields).
+  // (A percent above 100 never comes as BAD_REQUEST: the DTO's @Max answers first with VALIDATION_FAILED.)
+  "VALIDATION_FAILED:lines": "يجب إضافة بند واحد على الأقل",
+  "BAD_REQUEST:warehouseId": "المخزن يجب أن يكون تابعًا لنفس الفرع",
+  "BAD_REQUEST:validUntil": "تاريخ الصلاحية لا يمكن أن يكون قبل تاريخ العرض",
+  "BAD_REQUEST:discountValue": "قيمة الخصم أكبر من الإجمالي",
+  // Converting a quotation / an invoice without a currency: there is no default currency.
+  "BAD_REQUEST:currencyId": "لا توجد عملة أساسية، أضف عملة أولًا",
 };
 
 // The same idea for a document line ("lines.N.<field>"): key "<code>:<field>" without "lines.N.".
@@ -136,6 +144,13 @@ const CODE_FIELD_AR = {
 const LINE_CODE_FIELD_AR = {
   // The line's unit is neither the product's primary unit nor one of its product units.
   "BAD_REQUEST:itemUnitId": "هذه الوحدة غير معرفة لهذا الصنف",
+  // Each text must be true for EVERY case the code can mean:
+  // VALIDATION_FAILED on a line discount value = both discounts sent OR a bad value (negative, 5 decimals).
+  "VALIDATION_FAILED:discountValue": "قيمة خصم البند غير صحيحة",
+  // BAD_REQUEST on a line discount = bigger than quantity × price.
+  "BAD_REQUEST:discountValue": "الخصم أكبر من قيمة البند",
+  // VALIDATION_FAILED on a quantity = 0, negative or more than 4 decimals.
+  "VALIDATION_FAILED:quantity": "الكمية يجب أن تكون أكبر من صفر وبحد أقصى 4 أرقام عشرية",
 };
 
 const UNKNOWN_FIELD_AR = "أحد الحقول";

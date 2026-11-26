@@ -18,7 +18,7 @@ import StackedCell from "../../components/ui/StackedCell";
 import useAutoHideMessage from "../../hooks/useAutoHideMessage";
 import useLoadData from "../../hooks/useLoadData";
 import { getErrorMessage } from "../../utils/errors";
-import { formatDate } from "../../utils/format";
+import { formatDay } from "../../utils/format";
 import { deleteEmployee, getBranches, getEmployees } from "./employeesApi";
 import EmployeeFormModal from "./components/EmployeeFormModal";
 
@@ -31,12 +31,6 @@ function matchesSearch(employee, search) {
   );
 }
 
-// The API sends hireDate as "2025-01-01T00:00:00.000Z" (a calendar day, not a moment).
-// Only the date part is formatted, read as local time, so the day never shifts.
-function formatHireDate(value) {
-  if (!value) return "-";
-  return formatDate(`${value.slice(0, 10)}T00:00:00`);
-}
 
 // The employees and the branches (for their names, the filter and the form), loaded together.
 async function loadPageData() {
@@ -125,7 +119,7 @@ function Employees() {
       label: "الرقم القومي",
       render: (row) => (row.nationalId ? <span dir="ltr">{row.nationalId}</span> : "-"),
     },
-    { key: "hireDate", label: "تاريخ التعيين", render: (row) => formatHireDate(row.hireDate) },
+    { key: "hireDate", label: "تاريخ التعيين", render: (row) => formatDay(row.hireDate) },
   ];
 
   const noBranches = !loading && !error && branches.length === 0;

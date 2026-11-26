@@ -25,6 +25,14 @@ export function localDayEndISO(day) {
   return new Date(year, month - 1, date, 23, 59, 59, 999).toISOString();
 }
 
+// Today in the browser's time zone as "YYYY-MM-DD" (the default date of a new document).
+// Not new Date().toISOString(): that is the UTC day (between 00:00 and 02:00 in Cairo it is still yesterday).
+export function todayDay() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 // ─── DD/MM/YYYY text (DateInput) ─────────────────────────────────────────────────────────────────────────
 
 // Years accepted by DateInput: catches typos like 0202 or 20266.

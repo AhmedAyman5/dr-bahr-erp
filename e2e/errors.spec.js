@@ -98,6 +98,44 @@ test.describe("getErrorMessage", () => {
     );
   });
 
+  test("purchase quotations: header code + field messages (CODE_FIELD_AR)", () => {
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines"))).toBe("يجب إضافة بند واحد على الأقل");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "warehouseId"))).toBe("المخزن يجب أن يكون تابعًا لنفس الفرع");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "validUntil"))).toBe("تاريخ الصلاحية لا يمكن أن يكون قبل تاريخ العرض");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "discountValue"))).toBe("قيمة الخصم أكبر من الإجمالي");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "currencyId"))).toBe("لا توجد عملة أساسية، أضف عملة أولًا");
+    // Unchanged: VALIDATION_FAILED on these fields keeps the general text (the convert modal has its own message
+    // for warehouseId; a percent above 100 is answered by the DTO with VALIDATION_FAILED).
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "warehouseId"))).toBe(
+      "البيانات المدخلة غير صحيحة، راجع حقل المخزن",
+    );
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "discountPercent"))).toBe(
+      "البيانات المدخلة غير صحيحة، راجع حقل نسبة الخصم",
+    );
+    expect(getErrorMessage(apiError("DOES_NOT_EXIST", "warehouseId"))).toBe("المخزن غير موجود أو محذوف");
+  });
+
+  test("purchase quotations: line code + field messages (LINE_CODE_FIELD_AR), true for every case", () => {
+    // VALIDATION_FAILED on a line discount value = both discounts sent, OR a bad value (negative, 5 decimals).
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.1.discountValue"))).toBe(
+      "البند رقم 2: قيمة خصم البند غير صحيحة",
+    );
+    // BAD_REQUEST = the discount is bigger than quantity × price.
+    expect(getErrorMessage(apiError("BAD_REQUEST", "lines.0.discountValue"))).toBe("البند رقم 1: الخصم أكبر من قيمة البند");
+    // VALIDATION_FAILED on a quantity = 0, negative or more than 4 decimals.
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.2.quantity"))).toBe(
+      "البند رقم 3: الكمية يجب أن تكون أكبر من صفر وبحد أقصى 4 أرقام عشرية",
+    );
+    // A header discountValue is not a line: its own message.
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "discountValue"))).toBe(
+      "البيانات المدخلة غير صحيحة، راجع حقل قيمة الخصم",
+    );
+    // Other line codes on these fields are unchanged.
+    expect(getErrorMessage(apiError("INSUFFICIENT_STOCK", "lines.0.quantity"))).toBe(
+      "البند رقم 1: الكمية المتاحة في المخزن غير كافية",
+    );
+  });
+
   test("unchanged basics: no response, login, unknown code", () => {
     expect(getErrorMessage(new Error("Network Error"))).toBe("تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى");
     expect(getErrorMessage(apiError("UNAUTHORIZED"), { context: "login" })).toBe("اسم المستخدم أو كلمة المرور غير صحيحة");

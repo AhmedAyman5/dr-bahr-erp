@@ -62,8 +62,8 @@ dr-bahr/
 ### بيانات تجربة (demo data)
 
 To try the whole system without typing data, fill the local database with a realistic demo company
-(3 branches, 5 warehouses, ~25 products with opening stock, customers, suppliers, employees, USD / EUR
-and 4 users). Run it **after the backend is up**:
+(3 branches, 5 warehouses, ~25 products with opening stock and units, customers, suppliers, employees, USD / EUR,
+4 users and 6 purchase quotations). Run it **after the backend is up**:
 
 ```bash
 npm run seed:demo
@@ -80,6 +80,20 @@ missing and never edits or deletes anything (EGP stays the default currency, `ad
 | `youssef.adel`    | `Demo@123` | USER       |
 
 (They can log in, but until Week 5 only SUPERADMIN may open pages and call the API — the others see "ليس لديك صلاحية".)
+
+**Demo purchase quotations (عروض أسعار الشراء)** — one of each status, found again by their notes
+("عرض تجريبي 1 — …" … "عرض تجريبي 6 — …"), dated relative to the day the seed runs:
+
+| # | Status | What to try |
+| - | ------ | ----------- |
+| 1 | مسودة (today) | edit it, إرسال, حذف |
+| 2 | مُرسل, valid 30 more days (cartons, a line discount, 10% + tax 14%) | قبول / رفض |
+| 3 | مُرسل, **منتهي** (dated 20 days ago, valid until 5 days ago; a fixed discount) | the "منتهي" badge |
+| 4 | مقبول, with a warehouse | تحويل لفاتورة |
+| 5 | مرفوض (with a SERVICE line) | only حذف |
+| 6 | تم التحويل لفاتورة (dated 10 days ago) | its DRAFT purchase invoice (CREDIT, dated 8 days ago) |
+
+The seed prints the codes (PQ-… → PI-…). A quotation left half way by an interrupted run is moved on to its status.
 
 ## Scripts
 

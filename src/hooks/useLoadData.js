@@ -21,6 +21,8 @@
 // - refresh()     loads again SILENTLY: the table stays on screen while waiting (after add / edit /
 //                 delete). If it fails, the old data stays and refreshError has the message
 //                 → show it in an <Alert type="error">.
+// - setData(value) puts a value you already have on screen, without loading (e.g. the record an action like
+//                 "إرسال" returned): no LoadingState, no flash. A request still running is ignored.
 // Only the answer of the newest request is used: an older, slower answer is ignored.
 import { useEffect, useRef, useState } from "react";
 import { getErrorMessage } from "../utils/errors";
@@ -97,7 +99,14 @@ function useLoadData(loadFn, deps = []) {
     );
   }
 
-  return { data: result.data, loading, error, refreshError, reload, refresh };
+  function setData(data) {
+    // A load that is still running must not overwrite this newer value.
+    latestRequest.current += 1;
+    setResult({ key: requestKey, data, error: "" });
+    setRefreshError("");
+  }
+
+  return { data: result.data, loading, error, refreshError, reload, refresh, setData };
 }
 
 export default useLoadData;

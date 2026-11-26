@@ -4,12 +4,15 @@
 //   const [successMessage, showSuccess, hideSuccess] = useAutoHideMessage(); // 4 seconds
 //   showSuccess("تم حذف الفرع بنجاح");
 //   {successMessage && <Alert type="success" onClose={hideSuccess}>{successMessage}</Alert>}
+//
+// initialText (optional): a message to show from the first render (read once), e.g. one passed by another
+// page through the router state (see useRouteMessage).
 import { useEffect, useState } from "react";
 
-function useAutoHideMessage(ms = 4000) {
+function useAutoHideMessage(ms = 4000, initialText = "") {
   // Kept as an object, not just the text: showing the same text again is a new object,
   // so the timer starts again from zero.
-  const [shown, setShown] = useState(null);
+  const [shown, setShown] = useState(() => (initialText ? { text: initialText } : null));
 
   useEffect(() => {
     if (!shown) return;

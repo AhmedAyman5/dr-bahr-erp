@@ -10,6 +10,11 @@
 //     renderActions={(row) => <Button variant="ghost" onClick={() => edit(row)}><Pencil size={16} /></Button>}
 //   />
 // Each row needs a unique "id" (or pass rowKey="otherField").
+// column.render(row, index) and renderActions(row, index) also get the row's index (e.g. a "#" column).
+//
+// Optional (document lines, see components/documents/LinesTable): dense = smaller cell padding (inputs in cells);
+// rowClassName(row, index) = extra classes for a row (e.g. "align-top", a red tint for a row with an error);
+// actionsLabel = the header of the actions column (default "الإجراءات").
 //
 // Tables should fit the screen (stack secondary info with StackedCell). When one still overflows, it scrolls
 // sideways and a soft fade shows on the side that has hidden columns (RTL: the hidden columns start on the
@@ -27,10 +32,12 @@ const END_FADE = `${FADE_CLASSES} rtl:bg-linear-to-r ltr:bg-linear-to-l`;
 
 // Sticky actions cell. `before:` = the thin separating line on its scrolling side (shown only while the table
 // overflows: a real border would scroll away with border-collapse).
-const STICKY_CELL = "sticky end-0 px-4 py-3";
+const CELL_PADDING = "px-4 py-3";
+const DENSE_PADDING = "px-2 py-2";
+const STICKY_CELL = "sticky end-0";
 const STICKY_LINE = "before:absolute before:inset-y-0 before:start-0 before:w-px before:bg-slate-200";
 
-function DataTable({ columns, rows, renderActions, rowKey = "id" }) {
+function DataTable({ columns, rows, renderActions, rowKey = "id", dense = false, rowClassName, actionsLabel = "الإجراءات" }) {
   const scrollRef = useRef(null);
   const actionsHeaderRef = useRef(null);
   // Which sides have hidden columns right now + the width of the sticky actions column (0 = none).
@@ -64,6 +71,7 @@ function DataTable({ columns, rows, renderActions, rowKey = "id" }) {
   }, []);
 
   const overflows = hidden.start || hidden.end;
+  const padding = dense ? DENSE_PADDING : CELL_PADDING;
 
   return (
     <div className="relative rounded-lg border border-slate-200 bg-white">
@@ -72,7 +80,7 @@ function DataTable({ columns, rows, renderActions, rowKey = "id" }) {
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className="px-4 py-3 text-start font-semibold">
+                <th key={column.key} className={`${padding} text-start font-semibold`}>
                   {column.label}
                 </th>
               ))}
@@ -80,27 +88,27 @@ function DataTable({ columns, rows, renderActions, rowKey = "id" }) {
                 <th
                   ref={actionsHeaderRef}
                   data-sticky-actions
-                  className={`${STICKY_CELL} bg-slate-50 text-start font-semibold ${overflows ? STICKY_LINE : ""}`}
+                  className={`${STICKY_CELL} ${padding} bg-slate-50 text-start font-semibold ${overflows ? STICKY_LINE : ""}`}
                 >
-                  الإجراءات
+                  {actionsLabel}
                 </th>
               )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {rows.map((row) => (
-              <tr key={row[rowKey]} className="group hover:bg-slate-50">
+            {rows.map((row, index) => (
+              <tr key={row[rowKey]} className={`group hover:bg-slate-50 ${rowClassName ? rowClassName(row, index) : ""}`}>
                 {columns.map((column) => (
-                  <td key={column.key} className="px-4 py-3 text-slate-900">
-                    {column.render ? column.render(row) : (row[column.key] ?? "-")}
+                  <td key={column.key} className={`${padding} text-slate-900`}>
+                    {column.render ? column.render(row, index) : (row[column.key] ?? "-")}
                   </td>
                 ))}
                 {renderActions && (
                   <td
                     data-sticky-actions
-                    className={`${STICKY_CELL} bg-white group-hover:bg-slate-50 ${overflows ? STICKY_LINE : ""}`}
+                    className={`${STICKY_CELL} ${padding} bg-white group-hover:bg-slate-50 ${overflows ? STICKY_LINE : ""}`}
                   >
-                    <div className="flex items-center gap-1">{renderActions(row)}</div>
+                    <div className="flex items-center gap-1">{renderActions(row, index)}</div>
                   </td>
                 )}
               </tr>

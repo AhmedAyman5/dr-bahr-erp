@@ -56,6 +56,7 @@ test("a SUPERADMIN sees every link and can open /branches", async ({ page }) => 
     "أرصدة المخزون",
     "حركات المخزون",
     "كارت الصنف",
+    "عروض أسعار الشراء",
     "العملاء",
     "الموردين",
     "الموظفين",

@@ -61,8 +61,11 @@ test.describe("with backend", () => {
       const box = scrollBox(page);
       expect(await box.evaluate((el) => el.scrollWidth - el.clientWidth), "the table should overflow here").toBeGreaterThan(0);
 
-      const row = page.locator("main table tbody tr").first();
-      const name = (await row.locator("td").nth(1).locator("div > div").first().textContent()).trim();
+      // A DEMO product, not the first row: the first row is the newest product, usually one another test made
+      // and deletes while this test runs (its edit form then gets a 404).
+      const name = "مياه معدنية 1.5 لتر";
+      const row = page.locator("main table tbody tr").filter({ hasText: name });
+      await row.scrollIntoViewIfNeeded();
       const edit = page.getByRole("button", { name: `تعديل ${name}` });
       const remove = page.getByRole("button", { name: `حذف ${name}` });
       const units = page.getByRole("button", { name: `وحدات ${name}` });

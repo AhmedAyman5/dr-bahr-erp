@@ -30,7 +30,8 @@ Backend (Ahmed runs it, from `../backend`): `docker compose up -d` → API on `h
 Default local login: `admin` / `admin123` (SUPERADMIN).
 Demo data (`scripts/seed-demo.mjs`): a realistic company (branches, warehouses, products + opening stock, customers,
 suppliers, employees, USD / EUR, product units (كرتونة / دستة / شوال on 8 STOCK products), 4 users with password
-`Demo@123`). Idempotent: it only creates what is missing
+`Demo@123`), 6 purchase quotations (one per status: DRAFT, SENT, SENT expired, ACCEPTED, REJECTED, CONVERTED → one
+demo DRAFT purchase invoice; found again by their notes "عرض تجريبي N — …"). Idempotent: it only creates what is missing
 (looked up by name / code / national ID / username / product + unit), never edits or deletes, never touches EGP or `admin`.
 
 ---
@@ -102,8 +103,11 @@ Week 1 knowledge that only lived in them is already in our code and in this file
    `costPrice` is the weighted **average** cost ("متوسط التكلفة").
 3. **The server computes ALL totals.** The UI may show a live preview while typing, but always displays the server's
    values after saving. Never send totals (`subTotal`, `taxValue`, `netTotal`, `lineTotal`, `baseQuantity`, ...),
-   `code`, `status` or `createdBy` (only a fixed header `discountValue` may be sent, §9). Status changes only
-   through the action endpoints (post / cancel / status).
+   `code`, `status` or `createdBy`. Status changes only through the action endpoints (post / cancel / status).
+   **The header discount: ALWAYS send BOTH `discountPercent` and `discountValue`** (create and edit): percent mode
+   `{ discountPercent: X, discountValue: 0 }`, amount mode `{ discountPercent: 0, discountValue: Y }`, none → both 0.
+   The server stores the COMPUTED amount in `discountValue`, so a PATCH with only `discountPercent: 0` would keep the
+   old amount as a fixed discount (10% of 1500 → still 150). A percent above 0 wins over the amount.
 4. **POSTED documents are read-only** (no edit / delete); they can only be cancelled. CANCELLED is read-only too.
    Show the buttons from the state machines (week2flow §6) and a `StatusBadge` on every document and list row.
 5. **Paginated lists**: `?page=&pageSize=` (pageSize 1–100) → `data = { items, meta: { page, pageSize, total,
@@ -138,8 +142,8 @@ scripts/
 └── seed-demo.mjs             # demo data through the API (npm run seed:demo, §2)
 
 src/
-├── main.jsx                  # BrowserRouter + App
-├── App.jsx                   # renders <AppRoutes />
+├── main.jsx                  # applies the font size, renders App (StrictMode)
+├── App.jsx                   # renders <AppRoutes /> (the data router: RouterProvider)
 ├── index.css                 # Tailwind import + @theme design tokens
 ├── assets/                   # global assets only (logo, ...)
 │
@@ -148,7 +152,8 @@ src/
 │   └── session.js            # token + user in localStorage (only file that touches them)
 │
 ├── routes/
-│   ├── AppRoutes.jsx         # all routes in one place
+│   ├── AppRoutes.jsx         # all routes in one place: createBrowserRouter(createRoutesFromElements(...)) + RouterProvider
+│   ├── RouteError.jsx        # errorElement: Arabic "حدث خطأ غير متوقع" + reload (a render crash; unknown URLs → NotFound)
 │   ├── ProtectedRoute.jsx    # redirects to /login when there is no session
 │   ├── PublicOnlyRoute.jsx   # redirects to / when already logged in (login page)
 │   ├── RoleRoute.jsx         # shows "ليس لديك صلاحية" when the role may not open the page
@@ -156,19 +161,25 @@ src/
 │
 ├── components/
 │   ├── layout/               # MainLayout, Sidebar, Header (+ FontSizeMenu), PageHeader
-│   └── ui/                   # shared UI kit (see §7) — reuse, don't re-create
+│   ├── ui/                   # shared UI kit (see §7) — reuse, don't re-create
+│   └── documents/            # Week 2 document pieces (§7): LinesTable, TotalsBox, DocumentActions — never call the API
 │
-├── hooks/                    # shared hooks used by the list pages (see §5)
-│   ├── useLoadData.js        # load / reload / silent refresh of a page's data
+├── hooks/                    # shared hooks (see §5)
+│   ├── useLoadData.js        # load / reload / silent refresh of a page's data (+ setData)
 │   ├── usePaginatedData.js   # the same for a paginated Week 2 list (page, pageSize, filters)
-│   └── useAutoHideMessage.js # success message that hides by itself
+│   ├── useAutoHideMessage.js # success message that hides by itself
+│   ├── useRouteMessage.js    # a success message passed by another page in the router state (shown once)
+│   ├── useDebouncedCallback.js # run after the user stopped typing (list search, 400 ms)
+│   └── useUnsavedChanges.js  # full-page forms: blocks leaving with unsaved changes (useBlocker + beforeunload)
 │
 ├── utils/
 │   ├── body.js               # optionalField (request bodies: create → left out, edit → null)
-│   ├── dates.js              # DD/MM/YYYY ↔ "YYYY-MM-DD" (DateInput) + localDayStartISO / localDayEndISO (date-time filters)
+│   ├── dates.js              # DD/MM/YYYY ↔ "YYYY-MM-DD" (DateInput) + localDayStartISO / localDayEndISO (date-time filters) + todayDay
+│   ├── documentLines.js      # the line objects of a document form: newLine, lineFromServer, isEmptyLine, filledLineIndexes, validateLines, validatePercent
+│   ├── documentTotals.js     # live totals PREVIEW (same formulas as the backend): calcLineTotal, calcDocumentTotals, roundHalfUp
 │   ├── errors.js             # getErrorMessage(error) → Arabic message, getLineError(error) → { lineIndex, field }
 │   ├── fontSize.js           # حجم الخط: getFontSize / setFontSize / applyFontSize (root font size, saved per device)
-│   ├── format.js             # formatNumber, formatMoney, formatDate, formatDateTime, formatTime, formatQuantity, formatSourceCode
+│   ├── format.js             # formatNumber, formatMoney, formatDate, formatDay (a date-only API day), formatDateTime, formatTime, formatQuantity, formatSourceCode
 │   ├── labels.js             # enum values + Arabic labels (ITEM_TYPES, ROLES, statuses, MOVEMENT_TYPES, STOCK_IN/OUT_TYPES, formatReason, getBalanceSide, ...)
 │   └── money.js              # validateMoney, toMoneyNumber (money inputs in forms)
 │
@@ -179,6 +190,7 @@ src/
     ├── NoPermission/         # shown by RoleRoute
     ├── StockMovements/       # حركات المخزون: the first paginated list (usePaginatedData + filters, see §5)
     ├── ItemCard/             # كارت الصنف: product + warehouse in the URL, summary + movements oldest first
+    ├── PurchaseQuotations/   # عروض أسعار الشراء: THE REFERENCE DOCUMENT PAGE (§5 "Document pages")
     └── ...
 ```
 
@@ -208,7 +220,8 @@ pages/Products/
 - Uses `useState`, the shared hooks from `src/hooks/` (loading data: see below), simple functions, simple conditional rendering.
 - Calls functions from its own `<page>Api.js` only. No axios / `api` import in JSX files.
 - Must render the 4 states: **loading**, **error (with retry)**, **empty**, **data**. Use the shared state components.
-- Search / filtering of lists is done on the client (the API has no pagination yet).
+- Search / filtering: Week 1 lists (plain arrays) on the client; paginated Week 2 lists on the SERVER
+  (`usePaginatedData` filters in the query string; a typed search waits 400 ms: `useDebouncedCallback`).
 
 ### `<page>Api.js` — the page's contract with the backend
 
@@ -303,6 +316,44 @@ const { items, meta, filters, loading, error, refreshError, reload, refresh, set
   render and passes them as `useLoadData` deps instead.
 - No `eslint-disable` anywhere in `src/`: the hooks are written so the `react-hooks` lint rules pass.
 
+### Document pages (Week 2: quotations, invoices, returns) — `pages/PurchaseQuotations` is the reference
+
+A document (header + many lines) is NOT a modal: it has three views (routes) and ONE API file.
+
+```text
+pages/PurchaseQuotations/
+├── PurchaseQuotations.jsx        # list  /purchase-quotations            (paginated + filters, like StockMovements)
+├── PurchaseQuotationForm.jsx     # new + edit  /new, /:id/edit           (loads the data, shows the page states)
+├── PurchaseQuotationDetails.jsx  # details  /:id                         (read only + DocumentActions)
+├── purchaseQuotationsApi.js      # ALL calls of the 3 views (+ the dropdown lists, units, the linked invoice)
+├── quotationForm.js              # plain functions: getInitialForm, isFormDirty, getPreview, validateForm, ...
+└── components/
+    ├── QuotationEditor.jsx       # the form state (created once the data loaded: no "copy into state" effects)
+    ├── QuotationHeaderFields.jsx # the header card
+    └── ConvertToInvoiceModal.jsx # a small action dialog
+```
+
+- Routes inside the RoleRoute group: `/x`, `/x/new` (`key="new"`), `/x/:id`, `/x/:id/edit` (`key="edit"`).
+  The Sidebar link is active on the sub-pages by itself.
+- **Full-page form**: `useUnsavedChanges(isDirty)` + `<UnsavedChangesDialog guard={guard} />` (a Sidebar link, the
+  back button and `beforeunload` ask; logout is never blocked). After a successful save:
+  `guard.allowNavigation(); navigate(\`/x/${saved.id}\`, { state: { successMessage } })` — no question.
+- **Success messages between views** go through the router state; the page that opens reads them with
+  `useRouteMessage()` (shown once, then removed from the history entry: a refresh does not show it again).
+- **Lines**: `components/documents/LinesTable` edits line objects from `utils/documentLines.js` (typed text,
+  `price` = unitPrice / unitCost). Empty rows are ignored (not validated, not sent). EVERY save sends the FULL `lines`
+  array, on edit too (PATCH `lines` REPLACES all lines). Server `lines.N` = the N-th SENT line →
+  `filledLineIndexes(lines)[N]` is its form row (highlight it + the message under the field).
+- **Totals**: a live preview (`utils/documentTotals.js`, the backend formulas) in `TotalsBox` with the discount / tax
+  inputs; the details page shows the SERVER's totals. Both header discount fields are always sent (§3 Week 2 rule 3).
+- **Edit**: only in the editable statuses (another status → a message + "عرض التفاصيل"); 404 → "... غير موجود أو
+  محذوف". Saved choices that are no longer active (supplier, branch, warehouse, product, unit) show as
+  "<name> (محذوف)" in gray (names from the document); the save's DOES_NOT_EXIST clears that choice + refreshes the lists.
+- **Details**: the buttons come from the state machine (week2flow §6) through `DocumentActions` (each with its
+  confirmation). After an action show the document the server returned (`useLoadData`'s `setData`: no flash);
+  409 INVALID_STATUS → the Arabic message + a silent `refresh()` so the buttons follow the real status.
+- A 404 from GET `/:id` is not a page error: the loader returns null and the page shows the not-found state.
+
 ### Adding a new page — checklist
 
 1. Read the module doc(s) in `../backend/doc/`.
@@ -384,6 +435,9 @@ The backend does NOT prevent these yet, so the frontend must keep blocking them:
 - `LINE_CODE_FIELD_AR`: the same for a line field (key without `lines.N.`). Needed because one pair can mean two
   things: `BAD_REQUEST` + `itemUnitId` = "the product's primary unit" on the product-units endpoints, but
   `lines.N.itemUnitId` = "unit not defined for this product" in documents. Told apart by the field, never the message.
+  Every text must be true for EVERY case its code can mean (e.g. `VALIDATION_FAILED` + `lines.N.quantity` = 0,
+  negative OR more than 4 decimals). No dead entries (a percent > 100 never comes as BAD_REQUEST: the DTO's @Max
+  answers first with VALIDATION_FAILED).
 - Line fields `"lines.N.<field>"` → "البند رقم N+1: <message with the label of <field>>". `getLineError(error)`
   → `{ lineIndex, field }` (or `null`) so a document form can highlight that row.
 - No response at all (server down / network) → "تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى".
@@ -453,12 +507,22 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `StatusBadge`                              | Week 2 document status: `<StatusBadge status="POSTED" />` → "مُرحّل" (fixed color, see §8); `<StatusBadge expired />` → "منتهي" (quotation `isExpired`) |
 | `MovementTypeBadge`                        | stock movement type: `<MovementTypeBadge type="PURCHASE" />` → "شراء" — IN types green, OUT types red, تسوية gray (lists in `utils/labels.js`) |
 | `Pagination`                               | under a paginated table: "إجمالي: N", rows per page (20 / 50 / 100), "صفحة X من Y", السابق / التالي — props `meta`, `onPageChange`, `onPageSizeChange` (from `usePaginatedData`) |
+| `SearchSelect`                             | a dropdown you type in (combobox) for long lists (products, suppliers): props like Select + `options` `[{ value, label, sub?, keywords? }]`, `onChange(value)`, `emptyLabel` ("كل الموردين" in filters), `missingLabel` ("<name> (محذوف)"), `aria-label` in table cells. Search ignores case, Arabic letter forms and Arabic-Indic digits; keyboard ↓ ↑ Enter Escape Tab; the list is drawn in a portal (never cut off by a scrolling table) |
+| `UnsavedChangesDialog`                     | the question of `useUnsavedChanges` on a full-page form: red "تجاهل التغييرات" / "البقاء في الصفحة" |
 
-Week 2 document pieces still to build **with the first document page** (Purchase quotations), not before:
-`LinesTable` (lines + highlight row from `getLineError`), `TotalsBox` (server totals), `DocumentActions`
-(post / cancel / delete / edit from the state machines, each with a confirmation).
+DataTable extras (optional): `column.render(row, index)` / `renderActions(row, index)` get the index; `dense`
+(smaller padding, inputs in cells), `rowClassName(row, index)`, `actionsLabel`.
 
-Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title, subtitle, action button slot).
+**Document pieces — `components/documents/`** (presentational: they never import the API; the page passes data + callbacks):
+
+| Component         | Use |
+| ----------------- | --- |
+| `LinesTable`      | the editable lines of a document form: الصنف (SearchSelect: name / code / barcode) · الوحدة (primary unit first, then "كرتونة (12 قطعة)") · الكمية · `priceLabel` · خصم البند (% / مبلغ toggle, `showDiscount`) · `extraColumns` · الإجمالي (preview) · delete. Props: `lines`, `onChange`, `products`, `unitsByProduct` + `onLoadUnits` (the page loads / caches the units), `errors` (per row), `highlightIndex` (server line error: red row, scrolled into view), `disabled`. Built on DataTable (fade + sticky delete column at كبير) |
+| `TotalsBox`       | الإجمالي · الخصم (10%) · الضريبة (14%) · الصافي, money in `<span dir="ltr">`. Details: the server's values. Form: `editor` prop → the discount (نسبة % / مبلغ) and tax inputs + "معاينة" caption. `extraRows` for paid / remaining / refund later |
+| `DocumentActions` | the action buttons: `[{ key, label, icon, variant, to \| onClick, confirm? }]`; while one runs, all are disabled; errors are shown by the page |
+
+Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title (may be JSX), subtitle, action button slot,
+`back={{ to, label }}` = a small back link above the title on sub-pages).
 
 **Unsaved changes in forms** — built into `Modal`, never copy it into a page. Every form modal passes:
 
@@ -589,7 +653,14 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
 - Leftover checks compare snapshots, never expect empty lists: `e2e/global-setup.js` snapshots every list (+ the
   stock of every warehouse, + the units of every product, + the item card of every product in every warehouse: movement
   count + last balance) before the run and fails the run if, after it, a record was left behind, or a record
-  that existed before was deleted or modified (`updatedAt` / `lastLoginDate` ignored).
+  that existed before was deleted or modified (`updatedAt` / `lastLoginDate` / `isExpired` ignored). The paginated
+  `/purchase-quotations` and `/purchase-invoices` are read page by page (pageSize 100).
+- **One allowed leftover**: a converted quotation can never be deleted (backend rule), so a NEW quotation with status
+  CONVERTED whose notes contain `"e2e-"` may stay. Every test document's notes contain `e2e-<tag>` (found again with
+  `?search=`); the DRAFT invoice a conversion made IS deleted by the test (`DELETE /purchase-invoices/:id`).
+- Mocked "first call fails" answers: dev StrictMode loads twice on the first render, so fail until the retry is
+  clicked (a flag), never "only the 1st call". `test.use({ allowedConsoleErrors: [/status of (400|404)/] })`: ONE
+  regex (an array of two is read by Playwright as `[value, options]`).
 - Playwright runs with `workers: 4` (more parallel browsers overload the machine: `ERR_INSUFFICIENT_RESOURCES`).
 - Never weaken, skip or delete a test to make it pass; fix the real cause.
 - Tests that need the backend skip with a clear message when the API is down — tell Ahmed.
@@ -604,6 +675,6 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
 | 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ✅     |
-| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ✅ Stock movements + Item card · ⏳ Purchase quotations, Purchase invoices, Purchase returns | ⏳     |
+| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ✅ Stock movements + Item card · ✅ Purchase quotations (+ data router, unsaved-changes guard, SearchSelect, LinesTable / TotalsBox / DocumentActions) · ⏳ Purchase invoices, Purchase returns | ⏳     |
 
 Update this table when a page is finished.

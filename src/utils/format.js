@@ -50,6 +50,16 @@ export function formatDate(value) {
   });
 }
 
+// A CALENDAR DAY from the API (a date-only column: quotationDate, hireDate, validUntil, ...), sent back as
+// "2026-11-20T00:00:00.000Z". Shown from its first 10 characters, so it never shifts with the time zone
+// (new Date("...T00:00:00.000Z") would be the 19th in a time zone behind UTC).
+// formatDay("2026-11-20T00:00:00.000Z") → "20 نوفمبر 2026"  |  "2026-11-20" → same  |  empty / invalid → "-"
+export function formatDay(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}/.test(value)) return "-";
+  // Local midnight of that day → toLocaleDateString shows the same day.
+  return formatDate(`${value.slice(0, 10)}T00:00:00`);
+}
+
 // formatDateTime("2026-11-21T13:05:00.000Z") → date + time in local time, e.g. "21 نوفمبر 2026 في 3:05 م"
 // empty / invalid → "-"
 export function formatDateTime(value) {

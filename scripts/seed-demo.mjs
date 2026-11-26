@@ -206,6 +206,79 @@ const USERS = [
   { username: "youssef.adel", role: "USER", employee: "29701041209851" },
 ];
 
+// Purchase quotations (عروض أسعار الشراء, Week 2): one of each status. Natural key = the notes text (unique,
+// found again with GET /purchase-quotations?search=). Dates are days relative to the day the seed runs
+// (0 = today, -20 = 20 days ago). status = where the quotation ends (it is created DRAFT, then moved with the
+// status actions; CONVERTED = converted to a DRAFT purchase invoice). lines: [product, unit name, quantity, price,
+// line discount ({ percent } / { amount }, optional)]. discount = header { percent } or { amount }.
+const QUOTATIONS = [
+  {
+    notes: "عرض تجريبي 1 — منظفات (مسودة)",
+    status: "DRAFT", date: 0, supplier: "الشركة المصرية للمنظفات", branch: "فرع القاهرة - مدينة نصر",
+    tax: 14,
+    lines: [
+      ["مسحوق غسيل أوتوماتيك 3 كيلو", "كرتونة", 20, 1450],
+      ["كلور 1 لتر", "كرتونة", 30, 200, { percent: 5 }],
+    ],
+  },
+  {
+    notes: "عرض تجريبي 2 — مشروبات (مُرسل)",
+    status: "SENT", date: -2, validFor: 30, supplier: "شركة الإسكندرية للمشروبات", branch: "فرع الإسكندرية - سموحة",
+    warehouse: W_SMOUHA, discount: { percent: 10 }, tax: 14,
+    lines: [
+      ["مياه معدنية 1.5 لتر", "كرتونة", 100, 40],
+      ["شاي 250 جم", "كرتونة", 10, 1600, { amount: 200 }],
+    ],
+  },
+  {
+    notes: "عرض تجريبي 3 — مواد غذائية (مُرسل، منتهي الصلاحية)",
+    status: "SENT", date: -20, validUntil: -5, supplier: "مؤسسة الدلتا للمواد الغذائية", branch: "فرع المنصورة",
+    warehouse: W_MANSOURA, discount: { amount: 500 }, tax: 0,
+    lines: [
+      ["أرز 5 كيلو", "كرتونة", 50, 600],
+      ["سكر 1 كيلو", "شوال", 20, 1500],
+    ],
+  },
+  {
+    notes: "عرض تجريبي 4 — عناية شخصية (مقبول، جاهز للتحويل)",
+    status: "ACCEPTED", date: -5, validFor: 25, supplier: "شركة القاهرة لمستحضرات التجميل", branch: "فرع القاهرة - مدينة نصر",
+    warehouse: W_OBOUR, tax: 14,
+    lines: [
+      ["معجون أسنان 100 مل", "كرتونة", 15, 900],
+      ["صابون استحمام 125 جم", "دستة", 40, 250],
+    ],
+  },
+  {
+    notes: "عرض تجريبي 5 — أدوات منزلية (مرفوض)",
+    status: "REJECTED", date: -7, supplier: "مصنع العبور للبلاستيك", branch: "فرع القاهرة - مدينة نصر", tax: 14,
+    lines: [
+      ["أطباق بلاستيك (50 طبق)", "علبة", 200, 30],
+      ["أكياس قمامة كبيرة (رول 20 كيس)", "قطعة", 300, 18],
+      ["خدمة توصيل", "قطعة", 1, 500],
+    ],
+  },
+  {
+    notes: "عرض تجريبي 6 — النيل (تم التحويل لفاتورة)",
+    status: "CONVERTED", date: -10, supplier: "شركة النيل للتجارة والتوزيع", branch: "فرع القاهرة - مدينة نصر",
+    warehouse: W_NASR, discount: { percent: 10 }, tax: 14,
+    lines: [
+      ["معجون أسنان 100 مل", "دستة", 20, 480],
+      ["مسحوق غسيل أوتوماتيك 3 كيلو", "قطعة", 60, 240],
+    ],
+    // The demo DRAFT purchase invoice it becomes (for the purchase invoices page).
+    convert: { paymentType: "CREDIT", invoiceDate: -8 },
+  },
+];
+
+// The status actions that take a new quotation (DRAFT) to its final status, in order.
+const QUOTATION_STEPS = {
+  DRAFT: [],
+  SENT: ["SENT"],
+  ACCEPTED: ["SENT", "ACCEPTED"],
+  REJECTED: ["SENT", "REJECTED"],
+  CONVERTED: ["SENT", "ACCEPTED", "CONVERTED"],
+};
+
 // ---------------------------------------------------------------------------
 // API helpers
 // ---------------------------------------------------------------------------
@@ -512,6 +585,101 @@ async function seedUsers(employees) {
   }
 }
 
+// A day relative to today, in the machine's local time zone → "YYYY-MM-DD".
+function localDay(offsetDays) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// Quotation codes seen in this run (printed at the end).
+const quotationReport = [];
+
+// Purchase quotations: looked up by their notes; a missing one is created (DRAFT) and moved to its status with
+// the status actions. One left half way by an earlier run (e.g. still SENT) is moved on; never edited.
+async function seedPurchaseQuotations(suppliers, branches, warehouses, products) {
+  const unitCache = new Map(); // product id → GET /products/:id/units
+  async function unitId(product, unitName) {
+    if (!unitCache.has(product.id)) unitCache.set(product.id, await get(`/products/${product.id}/units`));
+    return unitCache.get(product.id).find((unit) => unit.itemUnit?.name === unitName)?.itemUnitId;
+  }
+
+  for (const entry of QUOTATIONS) {
+    const found = await get(`/purchase-quotations?search=${encodeURIComponent(entry.notes)}&pageSize=100`);
+    let quotation = found.items.find((item) => item.notes === entry.notes);
+
+    if (quotation) {
+      count("purchase quotations", "existed");
+    } else {
+      const supplier = suppliers.get(entry.supplier);
+      const branch = branches.get(entry.branch);
+      const warehouse = entry.warehouse ? warehouses.get(entry.warehouse) : null;
+      if (!supplier || !branch || (entry.warehouse && !warehouse)) {
+        count("purchase quotations", "skipped", `${entry.notes}: supplier / branch / warehouse missing`);
+        continue;
+      }
+      const lines = [];
+      for (const [productName, unitName, quantity, unitPrice, lineDiscount] of entry.lines) {
+        const product = products.get(productName);
+        const itemUnitId = product && (await unitId(product, unitName));
+        if (!itemUnitId) break;
+        const line = { productId: product.id, itemUnitId, quantity, unitPrice };
+        if (lineDiscount?.percent !== undefined) line.discountPercent = lineDiscount.percent;
+        if (lineDiscount?.amount !== undefined) line.discountValue = lineDiscount.amount;
+        lines.push(line);
+      }
+      if (lines.length !== entry.lines.length) {
+        count("purchase quotations", "skipped", `${entry.notes}: a product or its unit is missing`);
+        continue;
+      }
+      const body = {
+        quotationDate: localDay(entry.date),
+        supplierId: supplier.id,
+        branchId: branch.id,
+        // Both header discount fields (see purchaseQuotationsApi.js).
+        discountPercent: entry.discount?.percent ?? 0,
+        discountValue: entry.discount?.amount ?? 0,
+        taxPercent: entry.tax,
+        notes: entry.notes,
+        lines,
+      };
+      if (entry.validFor !== undefined) body.validUntil = localDay(entry.date + entry.validFor);
+      if (entry.validUntil !== undefined) body.validUntil = localDay(entry.validUntil);
+      if (warehouse) body.warehouseId = warehouse.id;
+      quotation = await post("/purchase-quotations", body);
+      count("purchase quotations", "created");
+    }
+
+    // Move it on to its final status (only the steps it has not done yet).
+    const steps = QUOTATION_STEPS[entry.status];
+    const done = ["DRAFT", ...steps].indexOf(quotation.status);
+    let invoiceCode = "";
+    for (const step of steps.slice(Math.max(done, 0))) {
+      if (step === "CONVERTED") {
+        const result = await call("POST", `/purchase-quotations/${quotation.id}/convert-to-invoice`, {
+          paymentType: entry.convert.paymentType,
+          invoiceDate: localDay(entry.convert.invoiceDate),
+        }).catch((error) => {
+          count("purchase quotations", "skipped", `${entry.notes}: convert failed (${error.body?.code} ${error.body?.field})`);
+          return null;
+        });
+        if (!result) break;
+        quotation = result.quotation;
+        invoiceCode = result.invoice.code;
+      } else {
+        quotation = await call("PATCH", `/purchase-quotations/${quotation.id}/status`, { status: step });
+      }
+    }
+    if (quotation.convertedToInvoiceId && !invoiceCode) {
+      invoiceCode = await get(`/purchase-invoices/${quotation.convertedToInvoiceId}`)
+        .then((invoice) => invoice.code)
+        .catch(() => "(فاتورة محذوفة)");
+    }
+    quotationReport.push(`${quotation.code}  ${quotation.status.padEnd(9)} ${entry.notes}${invoiceCode ? `  → ${invoiceCode}` : ""}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 const MODULE_AR = {
@@ -527,6 +695,7 @@ const MODULE_AR = {
   suppliers: "الموردين",
   employees: "الموظفين",
   users: "المستخدمين",
+  "purchase quotations": "عروض أسعار الشراء",
 };
 
 function printSummary() {
@@ -543,6 +712,10 @@ function printSummary() {
   console.log("-".repeat(60));
   console.log(totalCreated === 0 ? "لا جديد: كل البيانات موجودة بالفعل (nothing new, everything already existed)." : `تم إنشاء ${totalCreated} سجل (created ${totalCreated} records).`);
   console.log(`Demo users password: ${DEMO_PASSWORD}`);
+  if (quotationReport.length > 0) {
+    console.log("\nعروض أسعار الشراء التجريبية — demo purchase quotations:");
+    for (const line of quotationReport) console.log(`  ${line}`);
+  }
 }
 
 async function main() {
@@ -562,6 +735,9 @@ async function main() {
   await seedSuppliers();
   const employees = await seedEmployees(branches);
   await seedUsers(employees);
+  // Week 2 documents: need the suppliers, branches, warehouses, products and units above (+ EGP for the convert).
+  const suppliers = byName(await get("/supplier"));
+  await seedPurchaseQuotations(suppliers, branches, warehouses, products);
 
   printSummary();
 }
