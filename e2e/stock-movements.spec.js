@@ -607,7 +607,10 @@ test.describe("mocked API", () => {
     await expect(startFade).toHaveCount(0);
     const endBox = await endFade.boundingBox();
     const tableBox = await box.boundingBox();
-    expect(endBox.x).toBeLessThan(tableBox.x + 5); // on the left edge
+    // On the left, just before the sticky actions column (which stays at the left edge).
+    const stickyBox = await page.locator("th[data-sticky-actions]").boundingBox();
+    expect(stickyBox.x).toBeLessThan(tableBox.x + 5);
+    expect(Math.abs(endBox.x - (stickyBox.x + stickyBox.width))).toBeLessThan(2);
 
     // Scrolled all the way: the hidden columns are now on the right ("start").
     await box.evaluate((el) => el.scrollTo({ left: -el.scrollWidth }));

@@ -410,7 +410,8 @@ The backend does NOT prevent these yet, so the frontend must keep blocking them:
   not tied to the user account (logout keeps it). `main.jsx` applies it before the first render (no flash).
 - **Never hard-code px for text or spacing** (`text-[13px]`, `w-[220px]`, inline `style` sizes): use rem / Tailwind
   sizes so the font size setting keeps working. (Lucide `size={n}` on icons is the one px value: icons keep their size.)
-- كبير may make a wide table overflow at 1280px: the `DataTable` fade then shows the hidden side; modals scroll inside.
+- كبير may make a wide table overflow at 1280px: the `DataTable` fade then shows the hidden side and the sticky actions
+  column keeps the row buttons visible; modals scroll inside.
 
 ### Formatting — `utils/format.js`
 
@@ -442,7 +443,7 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `DateInput`                                | **every date field** (never `<input type="date">` directly): shows / types DD/MM/YYYY, slashes added while typing, paste "25/11/2026" or "2026-11-25", calendar button (native picker). `value` / `onChange(value, { invalid })` use `"YYYY-MM-DD"` (or `""`); while the text is not a real date (half typed, 31/02/2026) `value` is `""` and `invalid` is true: store the value AND block saving while `invalid` (see `EmployeeFormModal`). Shows "تاريخ غير صحيح" itself |
 | `Modal`                                    | dialog shell: title, body, footer actions; unsaved-changes check; `onCancel` (see below) |
 | `ConfirmDialog`                            | delete confirmations ("هل أنت متأكد من حذف ...؟")                             |
-| `DataTable`                                | simple table: `columns` + `rows` + optional actions column; a column `label` may be JSX (e.g. a long header that wraps). If a table still overflows it scrolls sideways and a soft fade marks the side with hidden columns (RTL-aware, follows scroll / resize) |
+| `DataTable`                                | simple table: `columns` + `rows` + optional actions column; a column `label` may be JSX (e.g. a long header that wraps). If a table still overflows it scrolls sideways and a soft fade marks the side with hidden columns (RTL-aware, follows scroll / resize). The actions column is sticky on the inline-end side (left in RTL): row buttons stay visible while the rest scrolls (thin line on its scrolling side, fade just before it; no change when the table fits) |
 | `StackedCell`                              | a table cell with a main value + a small gray line under it (`text-xs text-slate-500`): `<StackedCell main={row.name} sub={row.category?.name} />` (no `sub` → one line) |
 | `SearchInput`                              | search box above tables                                                       |
 | `Alert`                                    | inline success / error messages                                               |
