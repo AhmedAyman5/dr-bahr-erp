@@ -410,6 +410,7 @@ test.describe("mocked API", () => {
         totalCost: "-256.36",
         balanceAfter: "196",
         sourceType: "PR",
+        sourceId: "pr1",
         sourceCode: "PR-2026-000001",
       }),
       movement("m2", {
@@ -419,6 +420,7 @@ test.describe("mocked API", () => {
         totalCost: "13505.63",
         balanceAfter: "1300.5",
         sourceType: "PI",
+        sourceId: "pi1",
         sourceCode: "PI-2026-000001",
       }),
       movement("m3", { type: "ADJUSTMENT", quantity: "0", unitCost: "12", totalCost: "0", reason: "إعادة تقييم" }),
@@ -463,6 +465,9 @@ test.describe("mocked API", () => {
       balance: "100",
     });
     await expect(page.getByText("Week 1 opening balance")).toHaveCount(0);
+    // The purchase invoice number links to the invoice; the return number is plain text (no page yet).
+    await expect(rows.nth(1).getByRole("link", { name: "PI-2026-000001" })).toHaveAttribute("href", "/purchase-invoices/pi1");
+    await expect(rows.nth(0).getByRole("cell").nth(3).getByRole("link")).toHaveCount(0);
 
     // Badges: out = red, in = green, تسوية = neutral.
     await expect(rows.nth(0).getByText("مرتجع شراء")).toHaveClass(/bg-red-50/);

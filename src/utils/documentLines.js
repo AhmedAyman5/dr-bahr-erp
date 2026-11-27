@@ -1,4 +1,4 @@
-// The editable LINES of a document form (quotations now; invoices / returns later): plain helpers for the
+// The editable LINES of a document form (quotations, invoices; returns later): plain helpers for the
 // line objects that components/documents/LinesTable edits. No React, no API calls.
 //
 // One line in the form (every number is the typed TEXT, like every money input):
@@ -9,6 +9,9 @@
 //     discountType,           // "percent" | "amount" (the small toggle of the row)
 //     discount,               // "" = no line discount
 //     notes, notesOpen,       // line notes (max 250) + is the notes input shown
+//     batchNumber, batchOpen, // invoices: رقم التشغيلة (max 50) + is its input shown (quotations never send it)
+//     expiryDate,             // invoices: تاريخ الصلاحية "YYYY-MM-DD" or "" (quotations never send it)
+//     expiryInvalid,          // DateInput's flag: the typed expiry date is not a real date yet (blocks saving)
 //     savedProductName, savedProductCode, savedUnitName, // edit: names from the saved document (shown as "(محذوف)")
 //   }
 //
@@ -42,13 +45,18 @@ export function newLine() {
     discount: "",
     notes: "",
     notesOpen: false,
+    batchNumber: "",
+    batchOpen: false,
+    expiryDate: "",
+    expiryInvalid: false,
     savedProductName: "",
     savedProductCode: "",
     savedUnitName: "",
   };
 }
 
-// A saved line from the API → a form line. price = the line's price field (quotation: line.unitPrice).
+// A saved line from the API → a form line. price = the line's price field (quotation: line.unitPrice,
+// invoice: line.unitCost). An API day "2027-06-30T00:00:00.000Z" → "2027-06-30" (never through a Date).
 export function lineFromServer(line, price) {
   const hasPercent = line.discountPercent !== null && line.discountPercent !== undefined;
   const hasAmount = line.discountValue !== null && line.discountValue !== undefined;
@@ -62,6 +70,9 @@ export function lineFromServer(line, price) {
     discount: hasPercent ? String(line.discountPercent) : hasAmount ? String(line.discountValue) : "",
     notes: line.notes ?? "",
     notesOpen: Boolean(line.notes),
+    batchNumber: line.batchNumber ?? "",
+    batchOpen: Boolean(line.batchNumber),
+    expiryDate: line.expiryDate ? line.expiryDate.slice(0, 10) : "",
     savedProductName: line.product?.name ?? "",
     savedProductCode: line.product?.code ?? "",
     savedUnitName: line.itemUnit?.name ?? "",
@@ -80,7 +91,10 @@ export function isEmptyLine(line) {
     isBlank(line.quantity) &&
     isBlank(line.price) &&
     isBlank(line.discount) &&
-    isBlank(line.notes)
+    isBlank(line.notes) &&
+    isBlank(line.batchNumber) &&
+    !line.expiryDate &&
+    !line.expiryInvalid
   );
 }
 

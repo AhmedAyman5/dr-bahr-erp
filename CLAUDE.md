@@ -31,8 +31,11 @@ Default local login: `admin` / `admin123` (SUPERADMIN).
 Demo data (`scripts/seed-demo.mjs`): a realistic company (branches, warehouses, products + opening stock, customers,
 suppliers, employees, USD / EUR, product units (كرتونة / دستة / شوال on 8 STOCK products), 4 users with password
 `Demo@123`), 6 purchase quotations (one per status: DRAFT, SENT, SENT expired, ACCEPTED, REJECTED, CONVERTED → one
-demo DRAFT purchase invoice; found again by their notes "عرض تجريبي N — …"). Idempotent: it only creates what is missing
-(looked up by name / code / national ID / username / product + unit), never edits or deletes, never touches EGP or `admin`.
+demo DRAFT purchase invoice; found again by their notes "عرض تجريبي N — …"), 5 purchase invoices ("فاتورة تجريبية N — …":
+POSTED آجل partly paid, POSTED نقدي, POSTED آجل in USD @ 50.5, CANCELLED, DRAFT with expiry dates + batches; posting moves
+demo stock, never the 4 LOW products). Idempotent: it only creates what is missing (looked up by name / code / national
+ID / username / product + unit / notes), never edits or deletes, never touches EGP or `admin`; a document left half way
+is moved on with its own actions (status / post / cancel).
 
 ---
 
@@ -191,6 +194,7 @@ src/
     ├── StockMovements/       # حركات المخزون: the first paginated list (usePaginatedData + filters, see §5)
     ├── ItemCard/             # كارت الصنف: product + warehouse in the URL, summary + movements oldest first
     ├── PurchaseQuotations/   # عروض أسعار الشراء: THE REFERENCE DOCUMENT PAGE (§5 "Document pages")
+    ├── PurchaseInvoices/     # فواتير الشراء: the first document that MOVES STOCK (post / cancel, §5)
     └── ...
 ```
 
@@ -354,6 +358,31 @@ pages/PurchaseQuotations/
   409 INVALID_STATUS → the Arabic message + a silent `refresh()` so the buttons follow the real status.
 - A 404 from GET `/:id` is not a page error: the loader returns null and the page shows the not-found state.
 
+**Purchase invoices (`pages/PurchaseInvoices`) — what they add to the pattern** (week2flow §5 steps 7–13, §6.2):
+
+- Editable / deletable only while DRAFT; ترحيل (DRAFT → POSTED: the STOCK lines go into the warehouse) and
+  "إلغاء الفاتورة" (POSTED → CANCELLED: the same quantities come out again; refused while a POSTED return exists or when
+  part of the goods was already used: INSUFFICIENT_STOCK). Their confirms name the warehouse; the cancel confirm's
+  buttons are red "إلغاء الفاتورة" + `cancelLabel: "رجوع"` (two "إلغاء" buttons would be ambiguous).
+- **Payment**: two radio cards نقدي / آجل, NO default. نقدي → paid = net (no input, "مدفوع بالكامل"; the body has no
+  `paidAmount`, `dueDate` left out / null). آجل → "المدفوع" input in TotalsBox (≤ the preview net) + "المتبقي" + an
+  optional due date (≥ invoice date).
+- **Currency**: the default one is preselected ("(الأساسية)"); another one shows "1 دولار = [ ] جنيه" (سعر الصرف,
+  required, > 0, 4 decimals). `currencyId` is always sent, `exchangeRate` ONLY for a non-default currency (the default
+  is always 1). TotalsBox caption "المبالغ بعملة: دولار أمريكي (USD)". Stock costs are always in the default currency.
+- **Expiry / batch**: an extra column would not fit 1280×720, so they sit UNDER the product (`renderLineDetails`,
+  `components/LineExpiryFields.jsx`): a product with `hasExpiryDate` → the date (required) + the batch input; another
+  STOCK product → "+ رقم التشغيلة" next to "+ ملاحظة للبند" (`getLineLinks`); amber "منتهي الصلاحية" for a date before
+  the invoice date (warning only). The form requires the date for any `hasExpiryDate` product (like create / update);
+  the details alert "أدخل تاريخ الصلاحية للبنود: …" + a disabled ترحيل follow the post (STOCK lines only).
+- **Duplicate supplier bill**: on leaving رقم فاتورة المورد (or choosing the supplier) → `?supplierId=&search=` and an
+  EXACT match (trimmed, any case) → amber "هذا الرقم مسجل بالفعل في الفاتورة … لنفس المورد". A number not checked yet
+  (Enter in the field) is checked before saving: a duplicate asks "رقم فاتورة مكرر" (حفظ على أي حال / رجوع). Never
+  blocks; the DRAFT details warn too.
+- Convert-to-invoice (quotation details) opens the new invoice with "تم إنشاء الفاتورة … من عرض السعر … — راجعها ثم
+  رحّلها"; "الفاتورة الناتجة" and the invoice's "من عرض السعر" are links.
+- Stock screens: a movement's document number is `components/ui/SourceDocumentLink` (PI → a link to the invoice).
+
 ### Adding a new page — checklist
 
 1. Read the module doc(s) in `../backend/doc/`.
@@ -506,6 +535,7 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `BalancePreview`                           | under a balance input: sign hint + live preview "سيتم تسجيله: ..."            |
 | `StatusBadge`                              | Week 2 document status: `<StatusBadge status="POSTED" />` → "مُرحّل" (fixed color, see §8); `<StatusBadge expired />` → "منتهي" (quotation `isExpired`) |
 | `MovementTypeBadge`                        | stock movement type: `<MovementTypeBadge type="PURCHASE" />` → "شراء" — IN types green, OUT types red, تسوية gray (lists in `utils/labels.js`) |
+| `SourceDocumentLink`                       | a stock movement's document number: `<SourceDocumentLink movement={row} />` → "PI-…" as a link to `/purchase-invoices/:sourceId`; another type ("PR", no page yet) plain text; no document "-" (ItemCard, StockMovements) |
 | `Pagination`                               | under a paginated table: "إجمالي: N", rows per page (20 / 50 / 100), "صفحة X من Y", السابق / التالي — props `meta`, `onPageChange`, `onPageSizeChange` (from `usePaginatedData`) |
 | `SearchSelect`                             | a dropdown you type in (combobox) for long lists (products, suppliers): props like Select + `options` `[{ value, label, sub?, keywords? }]`, `onChange(value)`, `emptyLabel` ("كل الموردين" in filters), `missingLabel` ("<name> (محذوف)"), `aria-label` in table cells. Search ignores case, Arabic letter forms and Arabic-Indic digits; keyboard ↓ ↑ Enter Escape Tab; the list is drawn in a portal (never cut off by a scrolling table) |
 | `UnsavedChangesDialog`                     | the question of `useUnsavedChanges` on a full-page form: red "تجاهل التغييرات" / "البقاء في الصفحة" |
@@ -517,9 +547,9 @@ DataTable extras (optional): `column.render(row, index)` / `renderActions(row, i
 
 | Component         | Use |
 | ----------------- | --- |
-| `LinesTable`      | the editable lines of a document form: الصنف (SearchSelect: name / code / barcode) · الوحدة (primary unit first, then "كرتونة (12 قطعة)") · الكمية · `priceLabel` · خصم البند (% / مبلغ toggle, `showDiscount`) · `extraColumns` · الإجمالي (preview) · delete. Props: `lines`, `onChange`, `products`, `unitsByProduct` + `onLoadUnits` (the page loads / caches the units), `errors` (per row), `highlightIndex` (server line error: red row, scrolled into view), `disabled`. Built on DataTable (fade + sticky delete column at كبير) |
-| `TotalsBox`       | الإجمالي · الخصم (10%) · الضريبة (14%) · الصافي, money in `<span dir="ltr">`. Details: the server's values. Form: `editor` prop → the discount (نسبة % / مبلغ) and tax inputs + "معاينة" caption. `extraRows` for paid / remaining / refund later |
-| `DocumentActions` | the action buttons: `[{ key, label, icon, variant, to \| onClick, confirm? }]`; while one runs, all are disabled; errors are shown by the page |
+| `LinesTable`      | the editable lines of a document form: الصنف (SearchSelect: name / code / barcode) · الوحدة (primary unit first, then "كرتونة (12 قطعة)") · الكمية · `priceLabel` (a long one wraps) · خصم البند (% / مبلغ toggle, `showDiscount`) · `extraColumns` · الإجمالي (preview) · delete. Props: `lines`, `onChange`, `products`, `unitsByProduct` + `onLoadUnits` (the page loads / caches the units), `errors` (per row), `highlightIndex` (server line error: red row, scrolled into view), `disabled`; optional `showBaseQuantity` (gray "= 120 قطعة" under the quantity when the factor ≠ 1), `renderLineDetails(line, index, update)` (more fields UNDER the product: invoices' expiry / batch), `getLineLinks(line, index, update)` → `[{ key, label, onClick }]` (more "+ …" links next to "+ ملاحظة للبند"). Built on DataTable (fade + sticky delete column at كبير) |
+| `TotalsBox`       | الإجمالي · الخصم (10%) · الضريبة (14%) · الصافي, money in `<span dir="ltr">`. Details: the server's values. Form: `editor` prop → the discount (نسبة % / مبلغ) and tax inputs + "معاينة" caption. `extraRows` under الصافي: `{ key, label, value, strong?, hint? }` or an input row `{ key, label, input: { value, onChange, error, disabled } }` (invoices: المدفوع / المتبقي). `currencyCaption` (default "المبالغ بالعملة الأساسية") |
+| `DocumentActions` | the action buttons: `[{ key, label, icon, variant, to \| onClick, confirm?, disabled?, title? }]`; `confirm.cancelLabel` (default "إلغاء"); `disabled` + `title` = visible but unusable, the reason as a tooltip (e.g. ترحيل without expiry dates); while one runs, all are disabled; errors are shown by the page |
 
 Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title (may be JSX), subtitle, action button slot,
 `back={{ to, label }}` = a small back link above the title on sub-pages).
@@ -620,7 +650,11 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
   and `utils/fontSize.js` (the device's font size setting).
 - Unclear API behavior → ask. Missing endpoint → say so and suggest what the backend should add.
 - Keep comments short and useful; write code a junior React developer can follow.
-- **Git and GitHub only on request.** Ahmed owns the repo. Do not run any command that changes git state or GitHub (`git add`, `commit`, `push`, `pull`, `checkout`, `reset`, `merge`, `rebase`, `stash`, `gh ...`) unless Ahmed explicitly asks for it in the current message/prompt. Read-only `git status`, `git diff`, `git log` are fine anytime. By default: finish the task, then suggest a commit message — Ahmed tests, commits and pushes himself.
+- **Git and GitHub only on request.** Ahmed owns the repo. READ-ONLY git commands are allowed to review your own
+  changes: `git status`, `git diff`, `git log`, `git show`. Anything that changes the repo or the remote (`git add`,
+  `commit`, `push`, `pull`, `checkout`, `reset`, `stash`, `restore`, `branch`, `merge`, `rebase`, `tag`, `gh ...`, …)
+  stays forbidden unless Ahmed explicitly asks for it in the current message/prompt. By default: finish the task, then
+  suggest a commit message — Ahmed tests, commits and pushes himself.
 - **Docker only on request.** Do not run `docker` commands unless Ahmed explicitly asks. If the API seems down (network error on `localhost:3000`), tell Ahmed instead.
 
 ### Definition of done (check before saying a task is finished)
@@ -655,9 +689,20 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
   count + last balance) before the run and fails the run if, after it, a record was left behind, or a record
   that existed before was deleted or modified (`updatedAt` / `lastLoginDate` / `isExpired` ignored). The paginated
   `/purchase-quotations` and `/purchase-invoices` are read page by page (pageSize 100).
-- **One allowed leftover**: a converted quotation can never be deleted (backend rule), so a NEW quotation with status
-  CONVERTED whose notes contain `"e2e-"` may stay. Every test document's notes contain `e2e-<tag>` (found again with
-  `?search=`); the DRAFT invoice a conversion made IS deleted by the test (`DELETE /purchase-invoices/:id`).
+- **Allowed leftovers** (documents the backend never lets anyone delete): a NEW quotation with status CONVERTED, and a
+  NEW purchase invoice with status POSTED or CANCELLED (only a DRAFT can be deleted: tests cancel what they posted),
+  each only when its notes contain `"e2e-"`. Every test document's notes contain `e2e-<tag>` (found again with
+  `?search=`); DRAFT invoices (also the ones a conversion made) ARE deleted by the tests (`DELETE /purchase-invoices/:id`).
+  Invoice tests post ONLY into their own warehouses with their own products (demo item cards never change), in the
+  default currency; a throwaway currency is used only on DRAFTs (a posted invoice locks its currency for ever).
+- **Test documents that can't be deleted are dated 2001**: every test document that ends POSTED, CANCELLED or CONVERTED
+  uses `TEST_DOC_DATE` ("2001-01-15", `e2e/helpers.js`; other dates relative to it with `addDays`, typed with
+  `typedDate`). They get their own numbers (PI-2001-…, PQ-2001-…) and sort to the END of the lists (newest first)
+  instead of piling up on top. API setups send it; UI tests type it (also in the convert modal) after checking the
+  "today" default. Deletable drafts may keep today. "منتهي" = validUntil before TODAY (2001 is fine); a quotation that
+  must NOT be expired needs a validUntil after today.
+- `currencies.spec.js` runs FIRST, alone (Playwright project `currencies`, the others depend on it): it makes a test
+  currency the default for a few seconds, which would give a parallel document test the wrong currency.
 - Mocked "first call fails" answers: dev StrictMode loads twice on the first render, so fail until the retry is
   clicked (a flag), never "only the 1st call". `test.use({ allowedConsoleErrors: [/status of (400|404)/] })`: ONE
   regex (an array of two is read by Playwright as `[value, options]`).
@@ -675,6 +720,6 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
 | 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ✅     |
-| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ✅ Stock movements + Item card · ✅ Purchase quotations (+ data router, unsaved-changes guard, SearchSelect, LinesTable / TotalsBox / DocumentActions) · ⏳ Purchase invoices, Purchase returns | ⏳     |
+| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ✅ Stock movements + Item card · ✅ Purchase quotations (+ data router, unsaved-changes guard, SearchSelect, LinesTable / TotalsBox / DocumentActions) · ✅ Purchase invoices (post / cancel move stock, payment, currency, expiry / batch, duplicate bill warning, SourceDocumentLink) · ⏳ Purchase returns | ⏳     |
 
 Update this table when a page is finished.

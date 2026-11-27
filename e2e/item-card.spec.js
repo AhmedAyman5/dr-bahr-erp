@@ -328,13 +328,19 @@ test.describe("mocked API", () => {
   // The brush example of ../backend/doc/week2/week2flow.txt, step 16 (5 rows, quantity 218).
   const BRUSH_CARD = card("218", "10.6818", [
     movement("OPENING", "100", "10", "1000", "100", "10"),
-    movement("PURCHASE", "120", "11.25", "1350", "220", "10.6818", { sourceType: "PI", sourceCode: "PI-2026-000001" }),
+    movement("PURCHASE", "120", "11.25", "1350", "220", "10.6818", {
+      sourceType: "PI",
+      sourceId: "pi1",
+      sourceCode: "PI-2026-000001",
+    }),
     movement("PURCHASE_RETURN", "-24", "10.6818", "-256.36", "196", "10.6818", {
       sourceType: "PR",
+      sourceId: "pr1",
       sourceCode: "PR-2026-000001",
     }),
     movement("PURCHASE_RETURN_CANCEL", "24", "10.6818", "256.36", "220", "10.6818", {
       sourceType: "PR",
+      sourceId: "pr1",
       sourceCode: "PR-2026-000001",
     }),
     movement("ADJUSTMENT", "-2", "10.6818", "-21.36", "218", "10.6818", { reason: "جرد" }),
@@ -386,6 +392,11 @@ test.describe("mocked API", () => {
     await expectCardRow(rows.nth(2), { type: "مرتجع شراء", doc: "PR-2026-000001", outQty: "24", balance: "196", cost: "10.6818", avg: "10.6818" });
     await expectCardRow(rows.nth(3), { type: "إلغاء مرتجع شراء", doc: "PR-2026-000001", inQty: "24", balance: "220", cost: "10.6818", avg: "10.6818" });
     await expectCardRow(rows.nth(4), { type: "تسوية", note: "جرد", outQty: "2", balance: "218", cost: "10.6818", avg: "10.6818" });
+
+    // Document numbers: a purchase invoice is a link to it; a purchase return is plain text (no page yet).
+    await expect(rows.nth(1).getByRole("link", { name: "PI-2026-000001" })).toHaveAttribute("href", "/purchase-invoices/pi1");
+    await expect(rows.nth(2).getByRole("link")).toHaveCount(0);
+    await expect(rows.nth(0).getByRole("link")).toHaveCount(0);
 
     // Badge colors: stock in = green, stock out = red, تسوية = neutral gray.
     await expect(rows.nth(1).getByText("شراء", { exact: true })).toHaveClass(/bg-green-50/);

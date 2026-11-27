@@ -12,9 +12,10 @@ import ErrorState from "../../components/ui/ErrorState";
 import LoadingState from "../../components/ui/LoadingState";
 import MovementTypeBadge from "../../components/ui/MovementTypeBadge";
 import Select from "../../components/ui/Select";
+import SourceDocumentLink from "../../components/ui/SourceDocumentLink";
 import StackedCell from "../../components/ui/StackedCell";
 import useLoadData from "../../hooks/useLoadData";
-import { formatDate, formatMoney, formatQuantity, formatSourceCode, formatTime } from "../../utils/format";
+import { formatDate, formatMoney, formatQuantity, formatTime } from "../../utils/format";
 import { formatReason } from "../../utils/labels";
 import { getBranches, getInventories, getItemCard, getProducts } from "./itemCardApi";
 import ItemCardSummary from "./components/ItemCardSummary";
@@ -64,7 +65,8 @@ const COLUMNS = [
       );
     },
   },
-  { key: "sourceCode", label: "رقم المستند", render: (row) => formatSourceCode(row) },
+  // A purchase invoice number is a link to the invoice.
+  { key: "sourceCode", label: "رقم المستند", render: (row) => <SourceDocumentLink movement={row} /> },
   { key: "in", label: "وارد", render: renderIn },
   { key: "out", label: "منصرف", render: renderOut },
   {

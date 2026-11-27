@@ -165,6 +165,25 @@ export function randomTag() {
   return Math.random().toString(36).slice(2, 8);
 }
 
+// The date of every test document that can NEVER be deleted (a POSTED / CANCELLED purchase invoice, a CONVERTED
+// quotation). They stay in the database for ever: dated 2001 they get their own numbers (PI-2001-…, PQ-2001-…) and
+// sort to the END of the lists (newest first) instead of piling up on top of the real 2026 documents.
+// Deletable test drafts may keep today. Other dates of such a document are set relative to it (addDays).
+export const TEST_DOC_DATE = "2001-01-15";
+
+// addDays("2001-01-15", 30) → "2001-02-14" (plain "YYYY-MM-DD" days, no time zone involved).
+export function addDays(day, days) {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+// "2001-01-15" → "15/01/2001": what a user types in a DateInput.
+export function typedDate(day) {
+  const [year, month, date] = day.split("-");
+  return `${date}/${month}/${year}`;
+}
+
 // Opening balance table cell (customers / suppliers): the amount WITHOUT its sign (in dir=ltr),
 // then the solid "مدين" (sky-600) / "دائن" (violet-600) badge and the meaning line. Leave label out for a 0 balance
 // (then the cell must contain the amount only, no badge).

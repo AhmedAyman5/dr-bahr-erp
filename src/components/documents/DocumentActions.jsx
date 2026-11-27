@@ -14,9 +14,12 @@
 //     ]}
 //   />
 // - to:      a link (opens another page) — no confirmation.
-// - onClick: with `confirm` it runs after the ConfirmDialog (confirmVariant default "danger" = red).
+// - onClick: with `confirm` it runs after the ConfirmDialog (confirmVariant default "danger" = red;
+//   confirm.cancelLabel default "إلغاء", e.g. "رجوع" when the action itself is called "إلغاء الفاتورة").
 //   While a returned promise runs, EVERY button is disabled (links too) and the dialog's button shows loading;
 //   the dialog closes when it ends. The page catches and shows its own errors (onClick should not throw).
+// - disabled + title: the button stays visible but can't be used; `title` says why (a tooltip on a wrapper,
+//   because a disabled button shows no tooltip in every browser), e.g. "عليها مرتجع مُرحّل، ألغِ المرتجع أولًا".
 import { useState } from "react";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -53,6 +56,15 @@ function DocumentActions({ actions }) {
             {action.label}
           </>
         );
+        if (action.disabled) {
+          return (
+            <span key={action.key} title={action.title}>
+              <Button variant={action.variant} disabled>
+                {content}
+              </Button>
+            </span>
+          );
+        }
         // A link can't be disabled: while an action runs it becomes a disabled button.
         if (action.to && !busy) {
           return (
@@ -80,6 +92,7 @@ function DocumentActions({ actions }) {
         message={pending?.confirm.message}
         confirmLabel={pending?.confirm.confirmLabel}
         confirmVariant={pending?.confirm.confirmVariant ?? "danger"}
+        cancelLabel={pending?.confirm.cancelLabel ?? "إلغاء"}
         onConfirm={() => run(pending)}
         onCancel={() => setPending(null)}
         loading={busy}

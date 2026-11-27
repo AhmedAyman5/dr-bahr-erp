@@ -4,10 +4,11 @@
 // database directly), so the whole system can be tried without typing data.
 //
 // Safe to run many times (idempotent): every record is first looked up by a natural key
-// (name / currency code / national ID / username / product + unit); only what is missing is created and the
-// existing ids are reused. Opening stock is added only when the product is not in that
+// (name / currency code / national ID / username / product + unit / document notes); only what is missing is
+// created and the existing ids are reused. Opening stock is added only when the product is not in that
 // warehouse yet. The script NEVER edits or deletes anything, and never touches EGP or the
-// admin account.
+// admin account. Documents are only moved on with their own actions (a quotation's status, an invoice's post /
+// cancel) when an earlier run stopped half way.
 //
 // Needs the backend running (../backend: docker compose up -d). The API URL comes from
 // VITE_API_URL in .env.local (fallback http://localhost:3000).
@@ -277,6 +278,63 @@ const QUOTATION_STEPS = {
   ACCEPTED: ["SENT", "ACCEPTED"],
   REJECTED: ["SENT", "REJECTED"],
   CONVERTED: ["SENT", "ACCEPTED", "CONVERTED"],
+};
+
+// Purchase invoices (Week 2): found again by their notes (unique), like the quotations. status = where the
+// invoice ends: created DRAFT, then posted (the goods go into the warehouse) and, for CANCELLED, cancelled (they
+// come out again). Never one of the 4 LOW products (their low-stock badge must stay). lines: [product, unit name,
+// quantity, unitCost, { percent / amount (line discount), expiry (days from today), batch }]. currency: a code with
+// its rate (left out = the default currency, EGP). dueIn = days after the invoice date (آجل only).
+const INVOICES = [
+  {
+    notes: "فاتورة تجريبية 1 — منظفات (آجل، مدفوع جزئيًا)",
+    status: "POSTED", date: -6, dueIn: 30, paymentType: "CREDIT", paid: 5000,
+    supplier: "الشركة المصرية للمنظفات", supplierInvoiceNumber: "EGD-2026-0457",
+    branch: "فرع القاهرة - مدينة نصر", warehouse: W_OBOUR, discount: { percent: 10 }, tax: 14,
+    lines: [
+      ["مسحوق غسيل أوتوماتيك 3 كيلو", "كرتونة", 10, 1450],
+      ["كلور 1 لتر", "كرتونة", 20, 200],
+    ],
+  },
+  {
+    notes: "فاتورة تجريبية 2 — أدوات منزلية (نقدي)",
+    status: "POSTED", date: -4, paymentType: "CASH",
+    supplier: "مصنع العبور للبلاستيك", branch: "فرع الإسكندرية - سموحة", warehouse: W_SMOUHA, tax: 14,
+    lines: [["أطباق بلاستيك (50 طبق)", "علبة", 100, 30]],
+  },
+  {
+    notes: "فاتورة تجريبية 3 — عناية شخصية بالدولار (آجل)",
+    status: "POSTED", date: -3, dueIn: 45, paymentType: "CREDIT", paid: 0,
+    supplier: "شركة القاهرة لمستحضرات التجميل", supplierInvoiceNumber: "CC-INV-88213",
+    branch: "فرع القاهرة - مدينة نصر", warehouse: W_OBOUR, currency: { code: "USD", rate: 50.5 }, tax: 0,
+    lines: [
+      ["شامبو 400 مل", "قطعة", 120, 1.75],
+      ["معجون أسنان 100 مل", "كرتونة", 5, 15.5, { percent: 5 }],
+    ],
+  },
+  {
+    notes: "فاتورة تجريبية 4 — مشروبات (ملغاة)",
+    status: "CANCELLED", date: -9, paymentType: "CASH",
+    supplier: "شركة الإسكندرية للمشروبات", branch: "فرع الإسكندرية - سموحة", warehouse: W_BORG, tax: 14,
+    lines: [["مياه معدنية 1.5 لتر", "كرتونة", 50, 33, { expiry: 365, batch: "W-2611" }]],
+  },
+  {
+    notes: "فاتورة تجريبية 5 — مواد غذائية (مسودة)",
+    status: "DRAFT", date: 0, dueIn: 30, paymentType: "CREDIT", paid: 0,
+    supplier: "مؤسسة الدلتا للمواد الغذائية", supplierInvoiceNumber: "DLT-5521",
+    branch: "فرع المنصورة", warehouse: W_MANSOURA, discount: { amount: 200 }, tax: 0,
+    lines: [
+      ["أرز 5 كيلو", "كرتونة", 25, 560, { expiry: 300, batch: "RICE-2611-A" }],
+      ["سكر 1 كيلو", "شوال", 10, 1500, { expiry: 240, batch: "SUG-11" }],
+    ],
+  },
+];
+
+// The actions that take a new invoice (DRAFT) to its final status, in order.
+const INVOICE_STEPS = {
+  DRAFT: [],
+  POSTED: ["post"],
+  CANCELLED: ["post", "cancel"],
 };
 
 // ---------------------------------------------------------------------------
@@ -593,18 +651,20 @@ function localDay(offsetDays) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// Quotation codes seen in this run (printed at the end).
+// Quotation / invoice codes seen in this run (printed at the end).
 const quotationReport = [];
+const invoiceReport = [];
+
+// The id of a product's unit by its name (the primary unit or a product unit), for document lines.
+const unitCache = new Map(); // product id → GET /products/:id/units
+async function unitId(product, unitName) {
+  if (!unitCache.has(product.id)) unitCache.set(product.id, await get(`/products/${product.id}/units`));
+  return unitCache.get(product.id).find((unit) => unit.itemUnit?.name === unitName)?.itemUnitId;
+}
 
 // Purchase quotations: looked up by their notes; a missing one is created (DRAFT) and moved to its status with
 // the status actions. One left half way by an earlier run (e.g. still SENT) is moved on; never edited.
 async function seedPurchaseQuotations(suppliers, branches, warehouses, products) {
-  const unitCache = new Map(); // product id → GET /products/:id/units
-  async function unitId(product, unitName) {
-    if (!unitCache.has(product.id)) unitCache.set(product.id, await get(`/products/${product.id}/units`));
-    return unitCache.get(product.id).find((unit) => unit.itemUnit?.name === unitName)?.itemUnitId;
-  }
-
   for (const entry of QUOTATIONS) {
     const found = await get(`/purchase-quotations?search=${encodeURIComponent(entry.notes)}&pageSize=100`);
     let quotation = found.items.find((item) => item.notes === entry.notes);
@@ -680,6 +740,84 @@ async function seedPurchaseQuotations(suppliers, branches, warehouses, products)
   }
 }
 
+// Purchase invoices: looked up by their notes; a missing one is created (DRAFT, the body built like
+// purchaseInvoicesApi.js) and moved to its status: posted (stock in) and, for CANCELLED, cancelled (stock out).
+// One left half way by an earlier run (e.g. still DRAFT) is moved on; never edited.
+async function seedPurchaseInvoices(suppliers, branches, warehouses, products) {
+  const currencies = new Map((await get("/currency")).map((currency) => [currency.code, currency]));
+
+  for (const entry of INVOICES) {
+    const found = await get(`/purchase-invoices?search=${encodeURIComponent(entry.notes)}&pageSize=100`);
+    let invoice = found.items.find((item) => item.notes === entry.notes);
+
+    if (invoice) {
+      count("purchase invoices", "existed");
+    } else {
+      const supplier = suppliers.get(entry.supplier);
+      const branch = branches.get(entry.branch);
+      const warehouse = warehouses.get(entry.warehouse);
+      const currency = entry.currency ? currencies.get(entry.currency.code) : null;
+      if (!supplier || !branch || !warehouse || (entry.currency && !currency)) {
+        count("purchase invoices", "skipped", `${entry.notes}: supplier / branch / warehouse / currency missing`);
+        continue;
+      }
+      const lines = [];
+      for (const [productName, unitName, quantity, unitCost, extra = {}] of entry.lines) {
+        const product = products.get(productName);
+        const itemUnitId = product && (await unitId(product, unitName));
+        if (!itemUnitId) break;
+        const line = { productId: product.id, itemUnitId, quantity, unitCost };
+        if (extra.percent !== undefined) line.discountPercent = extra.percent;
+        if (extra.amount !== undefined) line.discountValue = extra.amount;
+        if (extra.expiry !== undefined) line.expiryDate = localDay(extra.expiry);
+        if (extra.batch) line.batchNumber = extra.batch;
+        lines.push(line);
+      }
+      if (lines.length !== entry.lines.length) {
+        count("purchase invoices", "skipped", `${entry.notes}: a product or its unit is missing`);
+        continue;
+      }
+      const body = {
+        invoiceDate: localDay(entry.date),
+        paymentType: entry.paymentType,
+        supplierId: supplier.id,
+        branchId: branch.id,
+        warehouseId: warehouse.id,
+        // Both header discount fields (see purchaseInvoicesApi.js).
+        discountPercent: entry.discount?.percent ?? 0,
+        discountValue: entry.discount?.amount ?? 0,
+        taxPercent: entry.tax,
+        notes: entry.notes,
+        lines,
+      };
+      if (entry.supplierInvoiceNumber) body.supplierInvoiceNumber = entry.supplierInvoiceNumber;
+      if (entry.paymentType === "CREDIT") {
+        body.paidAmount = entry.paid ?? 0;
+        if (entry.dueIn !== undefined) body.dueDate = localDay(entry.date + entry.dueIn);
+      }
+      if (currency) {
+        body.currencyId = currency.id;
+        body.exchangeRate = entry.currency.rate;
+      }
+      invoice = await post("/purchase-invoices", body);
+      count("purchase invoices", "created");
+    }
+
+    // Move it on to its final status (only the steps it has not done yet).
+    const steps = INVOICE_STEPS[entry.status];
+    const done = ["DRAFT", "POSTED", "CANCELLED"].indexOf(invoice.status);
+    for (const step of steps.slice(Math.max(done, 0))) {
+      const moved = await call("POST", `/purchase-invoices/${invoice.id}/${step}`).catch((error) => {
+        count("purchase invoices", "skipped", `${entry.notes}: ${step} failed (${error.body?.code} ${error.body?.field})`);
+        return null;
+      });
+      if (!moved) break;
+      invoice = moved;
+    }
+    invoiceReport.push(`${invoice.code}  ${invoice.status.padEnd(9)} ${entry.notes}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 const MODULE_AR = {
@@ -696,6 +834,7 @@ const MODULE_AR = {
   employees: "الموظفين",
   users: "المستخدمين",
   "purchase quotations": "عروض أسعار الشراء",
+  "purchase invoices": "فواتير الشراء",
 };
 
 function printSummary() {
@@ -715,6 +854,10 @@ function printSummary() {
   if (quotationReport.length > 0) {
     console.log("\nعروض أسعار الشراء التجريبية — demo purchase quotations:");
     for (const line of quotationReport) console.log(`  ${line}`);
+  }
+  if (invoiceReport.length > 0) {
+    console.log("\nفواتير الشراء التجريبية — demo purchase invoices:");
+    for (const line of invoiceReport) console.log(`  ${line}`);
   }
 }
 
@@ -738,6 +881,8 @@ async function main() {
   // Week 2 documents: need the suppliers, branches, warehouses, products and units above (+ EGP for the convert).
   const suppliers = byName(await get("/supplier"));
   await seedPurchaseQuotations(suppliers, branches, warehouses, products);
+  // Posting moves demo stock (never the 4 LOW products); USD must exist for invoice 3.
+  await seedPurchaseInvoices(suppliers, branches, warehouses, products);
 
   printSummary();
 }

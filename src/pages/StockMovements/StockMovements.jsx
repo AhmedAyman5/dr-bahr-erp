@@ -18,10 +18,11 @@ import LoadingState from "../../components/ui/LoadingState";
 import MovementTypeBadge from "../../components/ui/MovementTypeBadge";
 import Pagination from "../../components/ui/Pagination";
 import Select from "../../components/ui/Select";
+import SourceDocumentLink from "../../components/ui/SourceDocumentLink";
 import StackedCell from "../../components/ui/StackedCell";
 import useLoadData from "../../hooks/useLoadData";
 import usePaginatedData from "../../hooks/usePaginatedData";
-import { formatDate, formatMoney, formatQuantity, formatSourceCode, formatTime } from "../../utils/format";
+import { formatDate, formatMoney, formatQuantity, formatTime } from "../../utils/format";
 import { MOVEMENT_TYPES, formatReason } from "../../utils/labels";
 import { getBranches, getInventories, getProducts, getStockMovements } from "./stockMovementsApi";
 
@@ -59,17 +60,20 @@ function renderQuantity(movement) {
   );
 }
 
-// Under the type badge: the document number (documents) and / or the reason (تسوية), when there is one.
-// They describe the same thing (what caused the movement) and a movement has one or the other.
+// Under the type badge: the document number (documents: a link to a purchase invoice) and / or the reason
+// (تسوية), when there is one. They describe the same thing (what caused the movement); a movement has one or the other.
 function renderType(movement) {
-  const notes = [movement.sourceCode ? formatSourceCode(movement) : "", formatReason(movement.reason)];
-  const sub = notes.filter((note) => note && note !== "-").join(" · ");
-  return (
-    <StackedCell
-      main={<MovementTypeBadge type={movement.type} />}
-      sub={sub && <span className="block max-w-28 whitespace-normal">{sub}</span>}
-    />
-  );
+  const hasDocument = Boolean(movement.sourceCode);
+  const reason = movement.reason ? formatReason(movement.reason) : "";
+  const sub =
+    hasDocument || reason ? (
+      <span className="block max-w-28 whitespace-normal">
+        {hasDocument && <SourceDocumentLink movement={movement} />}
+        {hasDocument && reason && " · "}
+        {reason}
+      </span>
+    ) : null;
+  return <StackedCell main={<MovementTypeBadge type={movement.type} />} sub={sub} />;
 }
 
 // 6 columns (+ the row action) that fit the screen: secondary info is stacked under the main value

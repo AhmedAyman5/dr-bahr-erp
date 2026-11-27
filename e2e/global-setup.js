@@ -14,9 +14,13 @@
 // midnight would see it change.
 //
 // Paginated Week 2 lists (PAGINATED_LISTS) are read page by page (pageSize 100).
-// One leftover is ALLOWED: a quotation converted to an invoice can never be deleted (backend rule, like stock
-// movements), so a NEW quotation with status CONVERTED whose notes contain "e2e-" may stay. The DRAFT invoice
-// it became is deleted by the test (DELETE /purchase-invoices/:id), like everything else the tests create.
+// Some leftovers are ALLOWED (records the backend never lets anyone delete, like stock movements):
+//   - a NEW quotation with status CONVERTED whose notes contain "e2e-" (a converted quotation stays);
+//   - a NEW purchase invoice with status POSTED or CANCELLED whose notes contain "e2e-" (only a DRAFT can be
+//     deleted; the tests cancel the ones they posted). DRAFT test invoices are deleted (DELETE /purchase-invoices/:id).
+// Those invoices only use the tests' own products / warehouses (the item cards above stay the same) and the
+// default currency (a posted invoice locks its currency: the tests' throwaway currency is only used on DRAFTs).
+// They are dated 2001 (TEST_DOC_DATE in helpers.js): their own PI-2001-… / PQ-2001-… numbers, at the end of the lists.
 //
 // When the API is down the check is skipped (the backend tests skip themselves too).
 import { API_URL } from "./helpers.js";
@@ -39,11 +43,12 @@ const PAGINATED_LISTS = ["/purchase-quotations", "/purchase-invoices"];
 
 const IGNORED_FIELDS = new Set(["updatedAt", "lastLoginDate", "isExpired"]);
 
-// The one allowed leftover (see the top of this file).
+// The allowed leftovers (see the top of this file): a NEW test document that can never be deleted.
 function isAllowedLeftover(path, record) {
-  return (
-    path === "/purchase-quotations" && record.status === "CONVERTED" && String(record.notes ?? "").includes("e2e-")
-  );
+  const isTestDocument = String(record.notes ?? "").includes("e2e-");
+  if (path === "/purchase-quotations") return isTestDocument && record.status === "CONVERTED";
+  if (path === "/purchase-invoices") return isTestDocument && ["POSTED", "CANCELLED"].includes(record.status);
+  return false;
 }
 
 // A stable text of a record without the ignored fields (also inside nested objects).

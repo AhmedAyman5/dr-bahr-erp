@@ -21,6 +21,9 @@ import Login from "../pages/Login/Login";
 import NotFound from "../pages/NotFound/NotFound";
 import ProductStock from "../pages/ProductStock/ProductStock";
 import Products from "../pages/Products/Products";
+import PurchaseInvoiceDetails from "../pages/PurchaseInvoices/PurchaseInvoiceDetails";
+import PurchaseInvoiceForm from "../pages/PurchaseInvoices/PurchaseInvoiceForm";
+import PurchaseInvoices from "../pages/PurchaseInvoices/PurchaseInvoices";
 import PurchaseQuotationDetails from "../pages/PurchaseQuotations/PurchaseQuotationDetails";
 import PurchaseQuotationForm from "../pages/PurchaseQuotations/PurchaseQuotationForm";
 import PurchaseQuotations from "../pages/PurchaseQuotations/PurchaseQuotations";
@@ -72,6 +75,10 @@ const router = createBrowserRouter(
           <Route path="purchase-quotations/new" element={<PurchaseQuotationForm key="new" />} />
           <Route path="purchase-quotations/:id" element={<PurchaseQuotationDetails />} />
           <Route path="purchase-quotations/:id/edit" element={<PurchaseQuotationForm key="edit" />} />
+          <Route path="purchase-invoices" element={<PurchaseInvoices />} />
+          <Route path="purchase-invoices/new" element={<PurchaseInvoiceForm key="new" />} />
+          <Route path="purchase-invoices/:id" element={<PurchaseInvoiceDetails />} />
+          <Route path="purchase-invoices/:id/edit" element={<PurchaseInvoiceForm key="edit" />} />
           <Route path="customers" element={<Customers />} />
           <Route path="suppliers" element={<Suppliers />} />
           <Route path="employees" element={<Employees />} />

@@ -63,14 +63,15 @@ dr-bahr/
 
 To try the whole system without typing data, fill the local database with a realistic demo company
 (3 branches, 5 warehouses, ~25 products with opening stock and units, customers, suppliers, employees, USD / EUR,
-4 users and 6 purchase quotations). Run it **after the backend is up**:
+4 users, 6 purchase quotations and 5 purchase invoices). Run it **after the backend is up**:
 
 ```bash
 npm run seed:demo
 ```
 
 It works only through the API (logs in as `admin`), and it is safe to run again: it creates only what is
-missing and never edits or deletes anything (EGP stays the default currency, `admin` is not touched).
+missing and never edits or deletes anything (EGP stays the default currency, `admin` is not touched). Documents
+are only moved on with their own actions (a quotation's status, an invoice's ترحيل / إلغاء).
 
 | Username          | Password   | Role       |
 | ----------------- | ---------- | ---------- |
@@ -94,6 +95,21 @@ missing and never edits or deletes anything (EGP stays the default currency, `ad
 | 6 | تم التحويل لفاتورة (dated 10 days ago) | its DRAFT purchase invoice (CREDIT, dated 8 days ago) |
 
 The seed prints the codes (PQ-… → PI-…). A quotation left half way by an interrupted run is moved on to its status.
+
+**Demo purchase invoices (فواتير الشراء)** — found again by their notes ("فاتورة تجريبية 1 — …" … "فاتورة تجريبية 5 — …").
+Posting really adds the goods to the demo warehouses (the stock / item card / movements pages show it); the 4 products
+that are below their reorder limit are never bought, so their low-stock badge stays:
+
+| # | Status | What to try |
+| - | ------ | ----------- |
+| 1 | مُرحّل, آجل, partly paid (cartons, 10% + tax 14%, due in 30 days, a supplier bill number) — العبور | المدفوع / المتبقي, كارت الصنف, إلغاء الفاتورة |
+| 2 | مُرحّل, نقدي — سموحة | paid in full |
+| 3 | مُرحّل, آجل in **USD** (rate 50.5) — العبور | the exchange rate, the stock cost per piece in EGP |
+| 4 | ملغي (posted, then cancelled; water with an expiry date + batch) — برج العرب | the إلغاء فاتورة شراء movement |
+| 5 | مسودة, آجل (rice + sugar with expiry dates and batches, a fixed discount) — المنصورة | edit it, ترحيل, حذف |
+
+The DRAFT invoice made from demo quotation 6 (PI-…, see above) is kept as it is.
+
 
 ## Scripts
 

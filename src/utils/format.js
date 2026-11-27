@@ -30,8 +30,7 @@ export function formatQuantity(value, options = {}) {
 }
 
 // Document number of a stock movement: "PI-2026-000001", or "-" for OPENING / ADJUSTMENT (no document).
-// Plain text for now. It is ONE helper on purpose: when the purchase pages exist it can become a link
-// to the document (movement.sourceType + movement.sourceId).
+// The text only: tables show it with components/ui/SourceDocumentLink (a link to the document's page).
 export function formatSourceCode(movement) {
   return movement?.sourceCode || "-";
 }

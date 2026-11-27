@@ -11,8 +11,14 @@
 //   }} />
 //   editor.discountType: "percent" | "amount" (toggle "نسبة %" / "مبلغ"); the texts are the typed values.
 //
-// extraRows (later: invoices / returns): [{ key, label, value, strong? }] under الصافي, e.g. المدفوع / المتبقي.
+// extraRows (invoices / returns): rows under الصافي, e.g. المدفوع / المتبقي:
+//   { key, label, value, strong?, hint? }  → the amount (+ a small gray hint under it: "مدفوع بالكامل")
+//   { key, label, input: { value, onChange(text), error, disabled } } → an amount input (the typed text), e.g. the
+//                                            المدفوع of a credit invoice; aria-label = the label
 // A value null / undefined shows "—" (e.g. a preview that can't be computed yet).
+//
+// currencyCaption: the line at the bottom (default "المبالغ بالعملة الأساسية"); a document in another currency
+// names it, e.g. "المبالغ بعملة: دولار أمريكي (USD)".
 import { formatMoney } from "../../utils/format";
 
 const INPUT_CLASSES =
@@ -38,6 +44,29 @@ function Row({ label, children, strong = false }) {
     <div className={`flex items-start justify-between gap-4 py-1.5 ${strong ? "text-base font-bold text-slate-900" : "text-sm text-slate-700"}`}>
       <span>{label}</span>
       <span className="text-end">{children}</span>
+    </div>
+  );
+}
+
+// An extra row with an amount input (المدفوع).
+function InputRow({ label, input }) {
+  return (
+    <div className="py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-slate-700">{label}</span>
+        <input
+          aria-label={label}
+          inputMode="decimal"
+          dir="ltr"
+          autoComplete="off"
+          value={input.value}
+          onChange={(event) => input.onChange(event.target.value)}
+          disabled={input.disabled}
+          aria-invalid={Boolean(input.error)}
+          className={`${INPUT_CLASSES} ${input.error ? "border-red-600" : "border-slate-300"}`}
+        />
+      </div>
+      {input.error && <p className="mt-1 text-xs text-red-600">{input.error}</p>}
     </div>
   );
 }
@@ -78,6 +107,7 @@ function TotalsBox({
   netTotal,
   editor,
   extraRows = [],
+  currencyCaption = "المبالغ بالعملة الأساسية",
 }) {
   return (
     <div className="ms-auto w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4" role="group" aria-label="الإجماليات">
@@ -144,15 +174,20 @@ function TotalsBox({
         <Row label="الصافي" strong>
           <Money value={netTotal} className="text-lg" />
         </Row>
-        {extraRows.map((row) => (
-          <Row key={row.key} label={row.label} strong={row.strong}>
-            <Money value={row.value} />
-          </Row>
-        ))}
+        {extraRows.map((row) =>
+          row.input ? (
+            <InputRow key={row.key} label={row.label} input={row.input} />
+          ) : (
+            <Row key={row.key} label={row.label} strong={row.strong}>
+              <Money value={row.value} />
+              {row.hint && <span className="block text-xs font-normal text-slate-500">{row.hint}</span>}
+            </Row>
+          ),
+        )}
       </div>
 
       {editor && <p className="mt-2 text-xs text-slate-500">معاينة — يحسب النظام الإجماليات النهائية عند الحفظ</p>}
-      <p className="mt-1 text-xs text-slate-400">المبالغ بالعملة الأساسية</p>
+      <p className="mt-1 text-xs text-slate-400">{currencyCaption}</p>
     </div>
   );
 }

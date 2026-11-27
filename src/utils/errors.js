@@ -137,6 +137,17 @@ const CODE_FIELD_AR = {
   "BAD_REQUEST:discountValue": "قيمة الخصم أكبر من الإجمالي",
   // Converting a quotation / an invoice without a currency: there is no default currency.
   "BAD_REQUEST:currencyId": "لا توجد عملة أساسية، أضف عملة أولًا",
+  "DOES_NOT_EXIST:currencyId": "العملة غير موجودة أو محذوفة",
+  // Purchase invoices (purchase-invoices.txt + the service code).
+  // exchangeRate: a foreign currency without a rate, OR the default currency with a rate other than 1.
+  "BAD_REQUEST:exchangeRate": "سعر الصرف مطلوب للعملة غير الأساسية (والعملة الأساسية سعرها 1)",
+  // آجل: the paid amount is above the net total.
+  "BAD_REQUEST:paidAmount": "المدفوع أكبر من صافي الفاتورة",
+  // The due date may be the invoice day itself, never before it.
+  "BAD_REQUEST:dueDate": "تاريخ الاستحقاق لا يمكن أن يكون قبل تاريخ الفاتورة",
+  // Only the invoice cancel sends BAD_REQUEST + status: a POSTED purchase return points to the invoice.
+  // (A wrong status is 409 INVALID_STATUS, another code.)
+  "BAD_REQUEST:status": "لا يمكن إلغاء الفاتورة لأن عليها مرتجع مُرحّل، ألغِ المرتجع أولًا",
 };
 
 // The same idea for a document line ("lines.N.<field>"): key "<code>:<field>" without "lines.N.".
@@ -151,6 +162,9 @@ const LINE_CODE_FIELD_AR = {
   "BAD_REQUEST:discountValue": "الخصم أكبر من قيمة البند",
   // VALIDATION_FAILED on a quantity = 0, negative or more than 4 decimals.
   "VALIDATION_FAILED:quantity": "الكمية يجب أن تكون أكبر من صفر وبحد أقصى 4 أرقام عشرية",
+  // Purchase invoices: the product has an expiry date and the line has none (create / update / post).
+  // (A badly formatted date is the same pair, but the form only sends real "YYYY-MM-DD" days.)
+  "VALIDATION_FAILED:expiryDate": "تاريخ الصلاحية مطلوب لهذا الصنف",
 };
 
 const UNKNOWN_FIELD_AR = "أحد الحقول";

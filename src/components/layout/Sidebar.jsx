@@ -14,6 +14,7 @@ import {
   House,
   IdCard,
   Package,
+  ReceiptText,
   Ruler,
   Tags,
   Truck,
@@ -52,7 +53,10 @@ const NAV_GROUPS = [
   {
     // Week 2 documents. A link is also active on its sub-pages (/purchase-quotations/new, /:id, /:id/edit).
     title: "المشتريات",
-    items: [{ label: "عروض أسعار الشراء", path: "/purchase-quotations", icon: FileText }],
+    items: [
+      { label: "عروض أسعار الشراء", path: "/purchase-quotations", icon: FileText },
+      { label: "فواتير الشراء", path: "/purchase-invoices", icon: ReceiptText },
+    ],
   },
   {
     title: "العملاء والموردين",

@@ -11,17 +11,23 @@
 //     onLoadUnits={loadUnits}             // (productId) → the page loads GET /products/:id/units (if not cached)
 //     errors={lineErrors}                 // per row: { productId, itemUnitId, quantity, price, discount, notes }
 //     highlightIndex={rowWithServerError} // red row + scrolled into view (a server "lines.N" error), or null
-//     priceLabel="سعر الوحدة"             // the price column (decided per document)
+//     priceLabel="سعر الوحدة"             // the price column (decided per document; a long one wraps)
 //     showDiscount                        // false → no line discount column (returns)
+//     showBaseQuantity                    // gray "= 120 قطعة" under the quantity (invoices: stock is in pieces)
 //     extraColumns={[]}                   // more inputs before الإجمالي: { key, label, render(line, index, update) }
+//     renderLineDetails={(line, index, update) => <LineExpiryFields ... />} // more fields UNDER the product
+//     getLineLinks={(line, index, update) => [{ key, label: "+ رقم التشغيلة", onClick }]} // next to "+ ملاحظة للبند"
 //     disabled={saving}
 //   />
+// update(changes) merges changes into that line (e.g. update({ batchOpen: true })).
 //
 // Behaviour:
 // - الصنف: searchable (name, code, barcode). Choosing a product selects its primary unit; another product resets
 //   the unit (quantity / price stay). الوحدة is disabled until a product is chosen: "قطعة", "كرتونة (12 قطعة)".
 // - خصم البند: one input + a "%" / "مبلغ" toggle; empty = no discount.
 // - "+ ملاحظة للبند" opens a notes input under the product (max 250); a row with notes shows it open.
+//   getLineLinks adds more "+ ..." links in the same row (the page decides when each is shown).
+// - showBaseQuantity: only when the unit's factor ≠ 1 and the quantity is a number above 0 (10 كرتونة × 12).
 // - "إضافة بند" adds an empty row and focuses its product. There is always at least one row. Removing a row with
 //   data asks first; an empty row is removed directly. Completely empty rows are ignored on save.
 // - الإجمالي: live preview (utils/documentTotals). The server computes the real totals.
@@ -36,9 +42,11 @@ import SearchSelect from "../ui/SearchSelect";
 import Select from "../ui/Select";
 import { calcLineTotal } from "../../utils/documentTotals";
 import { LINE_NOTES_MAX, isEmptyLine, newLine } from "../../utils/documentLines";
-import { formatMoney, formatNumber } from "../../utils/format";
+import { formatMoney, formatNumber, formatQuantity } from "../../utils/format";
 
 const DECIMAL_INPUT = { inputMode: "decimal", dir: "ltr", autoComplete: "off" };
+const LINK_CLASSES =
+  "rounded text-xs text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary/40";
 
 function RequiredLabel({ children }) {
   return (
@@ -91,7 +99,10 @@ function LinesTable({
   highlightIndex = null,
   priceLabel = "سعر الوحدة",
   showDiscount = true,
+  showBaseQuantity = false,
   extraColumns = [],
+  renderLineDetails,
+  getLineLinks,
   disabled = false,
 }) {
   const containerRef = useRef(null);
@@ -169,6 +180,36 @@ function LinesTable({
     return { options, unitMissing };
   }
 
+  // "= 120 قطعة": the quantity in the primary unit (quantity × factor), or "" when there is nothing to show.
+  function getBaseQuantityText(line) {
+    const entry = unitsByProduct[line.productId];
+    if (entry?.status !== "ready") return "";
+    const unit = entry.units.find((item) => item.itemUnitId === line.itemUnitId);
+    const factor = Number(unit?.factor);
+    const quantity = Number(line.quantity);
+    if (!unit || factor === 1 || String(line.quantity).trim() === "" || !(quantity > 0)) return "";
+    const primaryName = entry.units.find((item) => item.isPrimary)?.itemUnit?.name ?? "";
+    return `= ${formatQuantity(quantity * factor)} ${primaryName}`;
+  }
+
+  // The "+ ..." links under the product: the page's links (e.g. رقم التشغيلة), then the notes link.
+  function renderLinks(line, index) {
+    const links = getLineLinks ? getLineLinks(line, index, (changes) => updateLine(index, changes)) : [];
+    if (!line.notesOpen) {
+      links.push({ key: "notes", label: "+ ملاحظة للبند", onClick: () => updateLine(index, { notesOpen: true }) });
+    }
+    if (links.length === 0) return null;
+    return (
+      <div className="mt-1 flex flex-wrap gap-x-3">
+        {links.map((link) => (
+          <button key={link.key} type="button" onClick={link.onClick} disabled={disabled} className={LINK_CLASSES}>
+            {link.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   const columns = [
     {
       key: "number",
@@ -191,7 +232,8 @@ function LinesTable({
             autoFocus={line.key === focusKey}
             disabled={disabled}
           />
-          {line.notesOpen ? (
+          {renderLineDetails?.(line, index, (changes) => updateLine(index, changes))}
+          {line.notesOpen && (
             <div className="mt-1">
               <input
                 aria-label={`ملاحظة البند ${index + 1}`}
@@ -206,16 +248,8 @@ function LinesTable({
               />
               {errors[index]?.notes && <p className="mt-1 text-xs text-red-600">{errors[index].notes}</p>}
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => updateLine(index, { notesOpen: true })}
-              disabled={disabled}
-              className="mt-1 rounded text-xs text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary/40"
-            >
-              + ملاحظة للبند
-            </button>
           )}
+          {renderLinks(line, index)}
         </div>
       ),
     },
@@ -254,21 +288,31 @@ function LinesTable({
     {
       key: "quantity",
       label: <RequiredLabel>الكمية</RequiredLabel>,
-      render: (line, index) => (
-        <Input
-          className="w-20"
-          aria-label={`الكمية — البند ${index + 1}`}
-          {...DECIMAL_INPUT}
-          value={line.quantity}
-          onChange={(event) => updateLine(index, { quantity: event.target.value })}
-          error={errors[index]?.quantity}
-          disabled={disabled}
-        />
-      ),
+      render: (line, index) => {
+        const baseQuantity = showBaseQuantity ? getBaseQuantityText(line) : "";
+        return (
+          <div className="w-20">
+            <Input
+              aria-label={`الكمية — البند ${index + 1}`}
+              {...DECIMAL_INPUT}
+              value={line.quantity}
+              onChange={(event) => updateLine(index, { quantity: event.target.value })}
+              error={errors[index]?.quantity}
+              disabled={disabled}
+            />
+            {baseQuantity && <p className="mt-1 whitespace-normal text-xs text-slate-500">{baseQuantity}</p>}
+          </div>
+        );
+      },
     },
     {
       key: "price",
-      label: <RequiredLabel>{priceLabel}</RequiredLabel>,
+      // A long label ("سعر شراء الوحدة") wraps on two lines instead of widening the table.
+      label: (
+        <span className="inline-block max-w-24 whitespace-normal">
+          <RequiredLabel>{priceLabel}</RequiredLabel>
+        </span>
+      ),
       render: (line, index) => (
         <Input
           className="w-24"

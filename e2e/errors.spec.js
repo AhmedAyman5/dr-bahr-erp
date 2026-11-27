@@ -32,8 +32,9 @@ test.describe("getErrorMessage", () => {
       "البند رقم 1: الكمية أكبر من المسموح بإرجاعه",
     );
     expect(getErrorMessage(apiError("DOES_NOT_EXIST", "lines.1.productId"))).toBe("البند رقم 2: الصنف غير موجود أو محذوف");
-    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.11.expiryDate"))).toBe(
-      "البند رقم 12: البيانات المدخلة غير صحيحة، راجع حقل تاريخ الصلاحية",
+    // (expiryDate has its own text now: see "purchase invoices" below.)
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.11.unitCost"))).toBe(
+      "البند رقم 12: البيانات المدخلة غير صحيحة، راجع حقل سعر شراء الوحدة",
     );
     // An unknown line field: the neutral label, never English.
     expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.0.somethingNew"))).toBe(
@@ -133,6 +134,35 @@ test.describe("getErrorMessage", () => {
     // Other line codes on these fields are unchanged.
     expect(getErrorMessage(apiError("INSUFFICIENT_STOCK", "lines.0.quantity"))).toBe(
       "البند رقم 1: الكمية المتاحة في المخزن غير كافية",
+    );
+  });
+
+  test("purchase invoices: header and line code + field messages", () => {
+    // exchangeRate: a foreign currency without a rate OR the default currency with a rate ≠ 1 (one text for both).
+    expect(getErrorMessage(apiError("BAD_REQUEST", "exchangeRate"))).toBe(
+      "سعر الصرف مطلوب للعملة غير الأساسية (والعملة الأساسية سعرها 1)",
+    );
+    expect(getErrorMessage(apiError("BAD_REQUEST", "paidAmount"))).toBe("المدفوع أكبر من صافي الفاتورة");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "dueDate"))).toBe("تاريخ الاستحقاق لا يمكن أن يكون قبل تاريخ الفاتورة");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "status"))).toBe(
+      "لا يمكن إلغاء الفاتورة لأن عليها مرتجع مُرحّل، ألغِ المرتجع أولًا",
+    );
+    expect(getErrorMessage(apiError("DOES_NOT_EXIST", "currencyId"))).toBe("العملة غير موجودة أو محذوفة");
+    // A wrong status is another code (409): its own general text, never the return message.
+    expect(getErrorMessage(apiError("INVALID_STATUS", "status"))).toBe("لا يمكن تنفيذ العملية في حالة المستند الحالية");
+    // VALIDATION_FAILED on these header fields (a bad number from the DTO) keeps the general text.
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "exchangeRate"))).toBe(
+      "البيانات المدخلة غير صحيحة، راجع حقل سعر الصرف",
+    );
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "paidAmount"))).toBe("البيانات المدخلة غير صحيحة، راجع حقل المدفوع");
+    // A line without the expiry date its product needs (create / update / post).
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.2.expiryDate"))).toBe(
+      "البند رقم 3: تاريخ الصلاحية مطلوب لهذا الصنف",
+    );
+    expect(getLineError(apiError("VALIDATION_FAILED", "lines.2.expiryDate"))).toEqual({ lineIndex: 2, field: "expiryDate" });
+    // The batch number (max 50) keeps the general text with its label.
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "lines.0.batchNumber"))).toBe(
+      "البند رقم 1: البيانات المدخلة غير صحيحة، راجع حقل رقم التشغيلة",
     );
   });
 

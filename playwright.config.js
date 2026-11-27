@@ -14,8 +14,19 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
+    // The currency tests make a test currency the company's DEFAULT for a few seconds (and EGP again after).
+    // Documents use the default currency, and a posted purchase invoice locks its currency for ever: a document
+    // test running in that moment would get the wrong currency (or leave a test currency that can't be deleted).
+    // So the currency tests run FIRST, alone; every other test waits for them.
+    {
+      name: "currencies",
+      testMatch: /currencies\.spec\.js/,
+      use: { ...devices["Desktop Chrome"] },
+    },
     {
       name: "chromium",
+      testIgnore: /currencies\.spec\.js/,
+      dependencies: ["currencies"],
       use: { ...devices["Desktop Chrome"] },
     },
   ],

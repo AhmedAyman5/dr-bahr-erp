@@ -5,7 +5,7 @@
 // After an action the quotation the server returned is shown right away (no reload). 409 INVALID_STATUS (someone
 // changed it meanwhile) → the Arabic message + a silent refresh, so the buttons follow the real status.
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Check, FileOutput, Pencil, Send, Trash2, X } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import DocumentActions from "../../components/documents/DocumentActions";
@@ -167,11 +167,14 @@ function PurchaseQuotationDetails() {
     }
   }
 
+  // The new DRAFT invoice opens right away: it is reviewed (e.g. expiry dates) and posted there.
   function handleConverted(result) {
     setConvertOpen(false);
-    setData({ quotation: result.quotation, invoice: result.invoice });
-    setActionError("");
-    showSuccessMessage(`تم إنشاء فاتورة الشراء ${result.invoice.code} كمسودة من هذا العرض`);
+    navigate(`/purchase-invoices/${result.invoice.id}`, {
+      state: {
+        successMessage: `تم إنشاء الفاتورة ${result.invoice.code} من عرض السعر ${result.quotation.code} — راجعها ثم رحّلها`,
+      },
+    });
   }
 
   function handleConvertConflict(message) {
@@ -262,12 +265,15 @@ function PurchaseQuotationDetails() {
   function renderInvoice() {
     if (!invoice) return "—";
     if (invoice.deleted) return <span className="text-slate-400">الفاتورة محذوفة</span>;
-    // Plain text for now: the purchase invoice page (Prompt 19) makes it a link.
     return (
       <span className="inline-flex items-center gap-2">
-        <span dir="ltr" className="font-medium">
+        <Link
+          to={`/purchase-invoices/${quotation.convertedToInvoiceId}`}
+          dir="ltr"
+          className="font-medium text-primary hover:underline"
+        >
           {invoice.code}
-        </span>
+        </Link>
         <StatusBadge status={invoice.status} />
       </span>
     );

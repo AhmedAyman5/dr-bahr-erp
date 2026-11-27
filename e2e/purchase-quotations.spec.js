@@ -23,6 +23,8 @@ import {
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
+  TEST_DOC_DATE,
+  typedDate,
 } from "./helpers";
 
 const CODE_PATTERN = /^PQ-\d{4}-\d{6}$/;
@@ -533,8 +535,12 @@ test.describe("with backend", () => {
 
   // ─── 7. Flow: send → accept → convert ───────────────────────────────────────────────────────────────────
 
-  test("flow: إرسال → قبول → تحويل لفاتورة (آجل) → CONVERTED with the invoice code", async ({ page, request }) => {
-    const quotation = await createQuotation(request, { warehouseId: warehouseA1.id });
+  test("flow: إرسال → قبول → تحويل لفاتورة (آجل) → the new invoice opens; the quotation is CONVERTED with its link", async ({
+    page,
+    request,
+  }) => {
+    // It ends CONVERTED (can never be deleted): dated 2001, like every undeletable test document.
+    const quotation = await createQuotation(request, { warehouseId: warehouseA1.id, quotationDate: TEST_DOC_DATE });
     await page.goto(`/purchase-quotations/${quotation.id}`);
     const heading = page.getByRole("heading", { level: 1 });
     await expect(heading).toContainText("مسودة");
@@ -559,7 +565,7 @@ test.describe("with backend", () => {
     await expect(page.getByRole("button", { name: `تعديل ${quotation.code}` })).toBeDisabled();
     await page.getByRole("link", { name: quotation.code, exact: true }).click();
 
-    // Convert: no payment type → error; آجل + today → success.
+    // Convert: no payment type → error; آجل + the 2001 date (today is the default) → success.
     await page.getByRole("button", { name: "تحويل لفاتورة" }).click();
     const modal = page.getByRole("dialog", { name: "تحويل العرض إلى فاتورة شراء" });
     await expect(modal.getByLabel("المخزن")).toHaveValue(warehouseA1.name);
@@ -567,15 +573,28 @@ test.describe("with backend", () => {
     await expect(modal).toContainText("اختر طريقة الدفع");
     await modal.getByLabel(/آجل/).check();
     await expect(modal.getByLabel("تاريخ الفاتورة")).toHaveValue(typedDay(0));
+    await modal.getByLabel("تاريخ الفاتورة").fill(typedDate(TEST_DOC_DATE));
     await modal.getByRole("button", { name: "تحويل لفاتورة" }).click();
 
-    await expect(modal).toBeHidden();
-    await expect(page.getByRole("alert")).toContainText(/تم إنشاء فاتورة الشراء PI-\d{4}-\d{6} كمسودة من هذا العرض/);
+    // The new DRAFT invoice opens with the message (it is reviewed and posted there).
+    await expect(page).toHaveURL(/\/purchase-invoices\/[^/]+$/);
+    const invoiceUrl = page.url();
+    await expect(heading).toContainText(/فاتورة شراء PI-\d{4}-\d{6}/);
+    const invoiceCode = (await heading.locator("span[dir=ltr]").first().textContent()).trim();
+    await expect(page.getByRole("alert")).toContainText(
+      `تم إنشاء الفاتورة ${invoiceCode} من عرض السعر ${quotation.code} — راجعها ثم رحّلها`,
+    );
+    await expect(heading).toContainText("مسودة");
+
+    // Back on the quotation: CONVERTED, "الفاتورة الناتجة" links to the invoice.
+    await page.goto(`/purchase-quotations/${quotation.id}`);
     await expect(heading).toContainText("تم التحويل لفاتورة");
     const info = page.locator("main dl");
-    await expect(info).toContainText(/الفاتورة الناتجة\s*PI-\d{4}-\d{6}\s*مسودة/);
+    await expect(info).toContainText(new RegExp(`الفاتورة الناتجة\\s*${invoiceCode}\\s*مسودة`));
     await expect(page.getByRole("button", { name: "حذف" })).toBeHidden();
     await expect(page.getByRole("button", { name: "تحويل لفاتورة" })).toBeHidden();
+    await info.getByRole("link", { name: invoiceCode }).click();
+    await expect(page).toHaveURL(invoiceUrl);
   });
 
   test("convert: a quotation without a warehouse asks for one of its branch's warehouses", async ({ page, request }) => {
