@@ -19,6 +19,7 @@ import {
   expectStackedCell,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 // The table row that contains this text.
@@ -130,8 +131,8 @@ test.describe("with backend", () => {
     const requestPromise = page.waitForRequest(
       (req) => req.method() === "POST" && req.url().startsWith(`${API_URL}/employees`),
     );
-    // Enter in a field submits the form.
-    await dialog.getByLabel("الوظيفة").press("Enter");
+    // Enter in a field submits the form (a random-code collision: حفظ once more, like a user).
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () => dialog.getByLabel("الوظيفة").press("Enter"));
     const request = await requestPromise;
     expect(request.url()).toBe(`${API_URL}/employees/branch/${branch.id}`);
     // No branchId, no code; text trimmed; date as "YYYY-MM-DD".
@@ -171,7 +172,7 @@ test.describe("with backend", () => {
     await dialog.getByLabel("الوظيفة").fill("   ");
 
     const requestPromise = page.waitForRequest((req) => req.method() === "POST");
-    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
     expect((await requestPromise).postDataJSON()).toEqual({ fullName });
 
     await expect(dialog).toBeHidden();

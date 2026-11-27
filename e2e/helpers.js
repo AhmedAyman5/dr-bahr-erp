@@ -21,6 +21,26 @@ function isFromExtension(text = "") {
   return /(chrome|moz|safari-web)-extension:\/\//.test(text);
 }
 
+// Console errors a test allowed ONCE while it ran (allowConsoleErrorOnce), per page.
+const allowedOnceByPage = new WeakMap();
+
+// The console / page errors that make a test fail: every error not matched by `allowedPatterns`
+// (test.use({ allowedConsoleErrors })), minus ONE error per pattern in `allowedOncePatterns`
+// (each pattern removes exactly one matching error, never more).
+export function filterConsoleErrors(errors, allowedPatterns = [], allowedOncePatterns = []) {
+  const left = errors.filter((error) => !allowedPatterns.some((pattern) => pattern.test(error)));
+  for (const pattern of allowedOncePatterns) {
+    const index = left.findIndex((error) => pattern.test(error));
+    if (index !== -1) left.splice(index, 1);
+  }
+  return left;
+}
+
+// While a test runs: allow ONE console error matching `pattern` (e.g. the browser's log of one expected 409).
+export function allowConsoleErrorOnce(page, pattern) {
+  allowedOnceByPage.get(page)?.push(pattern);
+}
+
 export const test = base.extend({
   // Regexes of console errors this test expects. Default: none allowed.
   allowedConsoleErrors: [[], { option: true }],
@@ -42,6 +62,8 @@ export const test = base.extend({
     async ({ page, allowedConsoleErrors }, use) => {
       const errors = [];
       const warnings = [];
+      const allowedOnce = [];
+      allowedOnceByPage.set(page, allowedOnce);
 
       page.on("console", (message) => {
         if (isFromExtension(message.location().url)) return;
@@ -60,9 +82,7 @@ export const test = base.extend({
         console.log(`[console warning] ${warning}`);
       }
 
-      const unexpected = errors.filter(
-        (error) => !allowedConsoleErrors.some((pattern) => pattern.test(error)),
-      );
+      const unexpected = filterConsoleErrors(errors, allowedConsoleErrors, allowedOnce);
       expect(unexpected, "The app logged console / page errors").toEqual([]);
     },
     { auto: true },
@@ -119,6 +139,29 @@ export async function isRandomCodeCollision(response) {
   if (response.status() !== 409) return false;
   const body = await response.json().catch(() => null);
   return body?.code === "ALREADY_EXISTS" && body?.field === "code";
+}
+
+// What the app shows after such a collision (utils/errors.js "ALREADY_EXISTS:code").
+export const CODE_RETRY_MESSAGE = "تعذر إنشاء كود تلقائي، اضغط حفظ مرة أخرى";
+
+// A UI create (حفظ in an "add" form whose code the SERVER picks: branch, category, unit, customer, supplier,
+// employee, product) does what a user does on a random-code collision: when the save answers 409 ALREADY_EXISTS
+// on "code", the app shows CODE_RETRY_MESSAGE → that one 409 console log is allowed and حفظ is clicked ONCE more.
+// Any other answer is left alone (no blind retries). Returns the final response of the save.
+//   await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
+//   await saveWithCodeRetry(page, saveButton, () => nameInput.press("Enter")); // the first save with Enter
+export async function saveWithCodeRetry(page, saveButton, submit = () => saveButton.click()) {
+  const isSave = (response) => response.request().method() === "POST" && response.url().startsWith(API_URL);
+  const firstResponse = page.waitForResponse(isSave);
+  await submit();
+  const response = await firstResponse;
+  if (!(await isRandomCodeCollision(response))) return response;
+
+  await expect(page.getByText(CODE_RETRY_MESSAGE)).toBeVisible();
+  allowConsoleErrorOnce(page, /status of 409/);
+  const secondResponse = page.waitForResponse(isSave);
+  await saveButton.click();
+  return secondResponse;
 }
 
 // Creates a record through the API (e.g. path "/categories") and returns its data.

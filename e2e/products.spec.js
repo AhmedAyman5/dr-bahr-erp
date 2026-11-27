@@ -23,6 +23,7 @@ import {
   expectStackedCell,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 // Column order in the table. Stacked (StackedCell, so the table fits without scrolling):
@@ -225,8 +226,8 @@ test.describe("with backend", () => {
     await expect(dialog.getByText(PRICE_ORDER_WARNING)).toHaveCount(0);
 
     const requestPromise = waitForProductWrite(page, "POST");
-    // Enter in a field submits the form.
-    await dialog.getByLabel("حد إعادة الطلب").press("Enter");
+    // Enter in a field submits the form (a random-code collision: حفظ once more, like a user).
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () => dialog.getByLabel("حد إعادة الطلب").press("Enter"));
     const body = (await requestPromise).postDataJSON();
 
     expect(body).toEqual({
@@ -313,7 +314,7 @@ test.describe("with backend", () => {
     await dialog.getByLabel("حد إعادة الطلب").fill("2.25");
 
     const requestPromise = waitForProductWrite(page, "POST");
-    await save.click();
+    await saveWithCodeRetry(page, save);
     const body = (await requestPromise).postDataJSON();
     expect(body.retailPrice).toBe(12.3456);
     expect(body.wholesalePrice).toBe(10.5);
@@ -348,7 +349,7 @@ test.describe("with backend", () => {
     await expect(warning).toBeVisible();
 
     const requestPromise = waitForProductWrite(page, "POST");
-    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
     const body = (await requestPromise).postDataJSON();
     expect([body.retailPrice, body.wholesalePrice, body.bulkWholesalePrice]).toEqual([10, 12, 8]);
 
@@ -366,7 +367,7 @@ test.describe("with backend", () => {
     await dialog.getByLabel("نوع الصنف").selectOption({ label: "خدمي" });
 
     const requestPromise = waitForProductWrite(page, "POST");
-    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
     const body = (await requestPromise).postDataJSON();
     expect(body.itemType).toBe("SERVICE");
     expect(body.hasExpiryDate).toBe(false);

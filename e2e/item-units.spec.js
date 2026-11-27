@@ -19,6 +19,7 @@ import {
   deleteByTag,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 // Week 2: a unit is "in use" as a product's primary unit OR as one of its other units (carton = 12).
@@ -76,8 +77,8 @@ test.describe("with backend", () => {
     await expect(dialog.getByLabel("الكود")).toHaveCount(0);
 
     await dialog.getByLabel("الاسم").fill(name);
-    // Enter in a field submits the form.
-    await dialog.getByLabel("الاسم").press("Enter");
+    // Enter in a field submits the form (a random-code collision: حفظ once more, like a user).
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () => dialog.getByLabel("الاسم").press("Enter"));
 
     await expect(dialog).toBeHidden();
     const success = page.getByRole("alert").filter({ hasText: "تمت إضافة الوحدة بنجاح" });

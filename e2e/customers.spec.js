@@ -18,6 +18,7 @@ import {
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 // Column order in the table.
@@ -96,7 +97,7 @@ test.describe("with backend", () => {
       (req) => req.url() === `${API_URL}/customer` && req.method() === "POST",
     );
     // Enter in a field submits the form.
-    await dialog.getByLabel("الرصيد الافتتاحي").press("Enter");
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () => dialog.getByLabel("الرصيد الافتتاحي").press("Enter"));
     const body = (await requestPromise).postDataJSON();
 
     expect(body).toEqual({
@@ -138,7 +139,7 @@ test.describe("with backend", () => {
     const requestPromise = page.waitForRequest(
       (req) => req.url() === `${API_URL}/customer` && req.method() === "POST",
     );
-    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
     const body = (await requestPromise).postDataJSON();
     // Empty optional text fields are left out on create; empty money is 0 (never null).
     expect(body).toEqual({ name, creditLimit: 0, openingBalance: 0 });
@@ -168,7 +169,7 @@ test.describe("with backend", () => {
       const requestPromise = page.waitForRequest(
         (req) => req.url() === `${API_URL}/customer` && req.method() === "POST",
       );
-      await dialog.getByRole("button", { name: "حفظ" }).click();
+      await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
       expect((await requestPromise).postDataJSON().openingBalance).toBe(item.sent);
 
       await expect(dialog).toBeHidden();

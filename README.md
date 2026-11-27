@@ -63,7 +63,7 @@ dr-bahr/
 
 To try the whole system without typing data, fill the local database with a realistic demo company
 (3 branches, 5 warehouses, ~25 products with opening stock and units, customers, suppliers, employees, USD / EUR,
-4 users, 6 purchase quotations and 5 purchase invoices). Run it **after the backend is up**:
+4 users, 6 purchase quotations, 5 purchase invoices and 4 purchase returns). Run it **after the backend is up**:
 
 ```bash
 npm run seed:demo
@@ -71,7 +71,7 @@ npm run seed:demo
 
 It works only through the API (logs in as `admin`), and it is safe to run again: it creates only what is
 missing and never edits or deletes anything (EGP stays the default currency, `admin` is not touched). Documents
-are only moved on with their own actions (a quotation's status, an invoice's ترحيل / إلغاء).
+are only moved on with their own actions (a quotation's status, an invoice's / a return's ترحيل / إلغاء).
 
 | Username          | Password   | Role       |
 | ----------------- | ---------- | ---------- |
@@ -102,13 +102,25 @@ that are below their reorder limit are never bought, so their low-stock badge st
 
 | # | Status | What to try |
 | - | ------ | ----------- |
-| 1 | مُرحّل, آجل, partly paid (cartons, 10% + tax 14%, due in 30 days, a supplier bill number) — العبور | المدفوع / المتبقي, كارت الصنف, إلغاء الفاتورة |
+| 1 | مُرحّل, آجل, partly paid (cartons, 10% + tax 14%, due in 30 days, a supplier bill number) — العبور | المدفوع / المتبقي, كارت الصنف, its returns (إلغاء الفاتورة is blocked by demo return 1) |
 | 2 | مُرحّل, نقدي — سموحة | paid in full |
 | 3 | مُرحّل, آجل in **USD** (rate 50.5) — العبور | the exchange rate, the stock cost per piece in EGP |
 | 4 | ملغي (posted, then cancelled; water with an expiry date + batch) — برج العرب | the إلغاء فاتورة شراء movement |
 | 5 | مسودة, آجل (rice + sugar with expiry dates and batches, a fixed discount) — المنصورة | edit it, ترحيل, حذف |
 
 The DRAFT invoice made from demo quotation 6 (PI-…, see above) is kept as it is.
+
+**Demo purchase returns (مرتجعات الشراء)** — found again by their notes ("مرتجع تجريبي 1 — …" … "مرتجع تجريبي 4 — …";
+the list has no search, the seed reads every page). Never one of the 4 low-stock products, never the USD invoice:
+
+| # | Status | What to try |
+| - | ------ | ----------- |
+| 1 | مُرحّل, from demo invoice 1 (2 cartons of washing powder = 12 pieces out of العبور, reason تالف) | كارت الصنف (مرتجع شراء −12), the invoice ↔ return links |
+| 2 | مسودة, from demo invoice 2 (10 boxes of plates, سموحة) | edit it (the kind and the invoice are fixed), ترحيل, حذف |
+| 3 | ملغي, from demo invoice 1 (3 cartons of chlorine: −36 then +36, العبور) | the إلغاء مرتجع شراء movement; the quantity is returnable again |
+| 4 | مُرحّل, **بدون فاتورة** (2 dozen bath soap = 24 pieces out of برج العرب, tax 14%, refund 300) | the not-linked kind, المبلغ المسترد |
+
+The seed prints the codes and the stock each return moved.
 
 
 ## Scripts

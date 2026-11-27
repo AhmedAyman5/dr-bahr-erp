@@ -148,6 +148,15 @@ const CODE_FIELD_AR = {
   // Only the invoice cancel sends BAD_REQUEST + status: a POSTED purchase return points to the invoice.
   // (A wrong status is 409 INVALID_STATUS, another code.)
   "BAD_REQUEST:status": "لا يمكن إلغاء الفاتورة لأن عليها مرتجع مُرحّل، ألغِ المرتجع أولًا",
+  // Purchase returns (purchase-returns.txt + the service code).
+  // A linked return's invoice must be POSTED (on save; the details page says it its own way on post).
+  "BAD_REQUEST:purchaseInvoiceId": "يجب اختيار فاتورة شراء مُرحّلة",
+  // فاتورة is feminine: the general DOES_NOT_EXIST text would say "غير موجود".
+  "DOES_NOT_EXIST:purchaseInvoiceId": "فاتورة الشراء غير موجودة أو محذوفة",
+  // A linked return with another supplier than the invoice's (only returns send this pair).
+  "BAD_REQUEST:supplierId": "المورد يجب أن يكون مورد الفاتورة",
+  // The refund is above the return's net total.
+  "BAD_REQUEST:refundAmount": "المبلغ المسترد أكبر من صافي المرتجع",
 };
 
 // The same idea for a document line ("lines.N.<field>"): key "<code>:<field>" without "lines.N.".
@@ -165,6 +174,8 @@ const LINE_CODE_FIELD_AR = {
   // Purchase invoices: the product has an expiry date and the line has none (create / update / post).
   // (A badly formatted date is the same pair, but the form only sends real "YYYY-MM-DD" days.)
   "VALIDATION_FAILED:expiryDate": "تاريخ الصلاحية مطلوب لهذا الصنف",
+  // Purchase returns: a linked line pointing to a line of another invoice.
+  "BAD_REQUEST:purchaseInvoiceLineId": "هذا البند ليس من بنود الفاتورة",
 };
 
 const UNKNOWN_FIELD_AR = "أحد الحقول";

@@ -18,6 +18,7 @@ import {
   Ruler,
   Tags,
   Truck,
+  Undo2,
   UserCog,
   UserRound,
   Warehouse,
@@ -56,6 +57,7 @@ const NAV_GROUPS = [
     items: [
       { label: "عروض أسعار الشراء", path: "/purchase-quotations", icon: FileText },
       { label: "فواتير الشراء", path: "/purchase-invoices", icon: ReceiptText },
+      { label: "مرتجعات الشراء", path: "/purchase-returns", icon: Undo2 },
     ],
   },
   {

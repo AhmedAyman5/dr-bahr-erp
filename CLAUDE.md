@@ -33,9 +33,10 @@ suppliers, employees, USD / EUR, product units (كرتونة / دستة / شوا
 `Demo@123`), 6 purchase quotations (one per status: DRAFT, SENT, SENT expired, ACCEPTED, REJECTED, CONVERTED → one
 demo DRAFT purchase invoice; found again by their notes "عرض تجريبي N — …"), 5 purchase invoices ("فاتورة تجريبية N — …":
 POSTED آجل partly paid, POSTED نقدي, POSTED آجل in USD @ 50.5, CANCELLED, DRAFT with expiry dates + batches; posting moves
-demo stock, never the 4 LOW products). Idempotent: it only creates what is missing (looked up by name / code / national
-ID / username / product + unit / notes), never edits or deletes, never touches EGP or `admin`; a document left half way
-is moved on with its own actions (status / post / cancel).
+demo stock, never the 4 LOW products), 4 purchase returns ("مرتجع تجريبي N — …": POSTED linked to invoice 1, DRAFT linked
+to invoice 2, CANCELLED linked to invoice 1, POSTED not linked; never the USD invoice / the LOW products). Idempotent: it only creates what is missing (looked up by name / code / national
+ID / username / product + unit / notes; returns: every page of the list, it has no search), never edits or deletes, never
+touches EGP or `admin`; a document left half way is moved on with its own actions (status / post / cancel).
 
 ---
 
@@ -195,6 +196,7 @@ src/
     ├── ItemCard/             # كارت الصنف: product + warehouse in the URL, summary + movements oldest first
     ├── PurchaseQuotations/   # عروض أسعار الشراء: THE REFERENCE DOCUMENT PAGE (§5 "Document pages")
     ├── PurchaseInvoices/     # فواتير الشراء: the first document that MOVES STOCK (post / cancel, §5)
+    ├── PurchaseReturns/      # مرتجعات الشراء: two kinds (من فاتورة / بدون فاتورة), posting takes stock OUT (§5)
     └── ...
 ```
 
@@ -381,7 +383,35 @@ pages/PurchaseQuotations/
   blocks; the DRAFT details warn too.
 - Convert-to-invoice (quotation details) opens the new invoice with "تم إنشاء الفاتورة … من عرض السعر … — راجعها ثم
   رحّلها"; "الفاتورة الناتجة" and the invoice's "من عرض السعر" are links.
-- Stock screens: a movement's document number is `components/ui/SourceDocumentLink` (PI → a link to the invoice).
+- Stock screens: a movement's document number is `components/ui/SourceDocumentLink` (PI / PR → a link to the document).
+- Invoice details (POSTED): "عمل مرتجع" → `/purchase-returns/new?invoice=<id>`; the "المرتجعات" rows link to each return
+  (+ "عرض في قائمة المرتجعات" → `/purchase-returns?invoice=<id>`).
+
+**Purchase returns (`pages/PurchaseReturns`) — what they add** (week2flow §5 steps 11–14, §6.3, §7.2; purchase-returns.txt):
+
+- DRAFT → POSTED (the STOCK lines LEAVE the warehouse at the current average; the average does not change) → CANCELLED
+  (they come back at the same cost; returnable again). Confirms name the warehouse; "إلغاء المرتجع" + `cancelLabel: "رجوع"`.
+- **Two kinds, FIXED after creation** (edit shows them read only; to change: delete the draft, create a new one):
+  - "من فاتورة شراء" (default, recommended): a POSTED invoice (picker = the newest 100 POSTED, an optional supplier
+    narrows it; `?invoice=<id>` preselects and locks it). The page loads `GET /purchase-invoices/:id` (lines with
+    lineTotal, currency, purchaseReturns) + `/returnable` (no prices). `components/InvoiceReturnLines`: one row per invoice
+    line, "متاح للإرجاع" / "اشتريت · مرتجع سابقًا", a quantity + "الكل", read-only price = round4(lineTotal / quantity);
+    must fit 1366 / 1280 at متوسط (tested). Body per line ONLY `{ purchaseInvoiceLineId, quantity, notes? }` (+
+    `purchaseInvoiceId` again on edit); never supplier / branch / warehouse / product / unit / price / discounts / tax.
+    Preview: the invoice's discount SHARE (round2(subTotal × invoice discountValue / invoice subTotal)) + its tax %,
+    read-only rows "من الفاتورة". Server `lines.N` = the N-th invoice row WITH a quantity (`sentLineIds`);
+    QUANTITY_EXCEEDED → that row + the returnable loads again. Other DRAFT returns of the invoice → an amber note.
+  - "بدون فاتورة": supplier / branch / warehouse + `LinesTable` (`showDiscount={false}`) + the header discount / tax
+    like an invoice (both discount fields always sent).
+- Its invoice no longer POSTED (cancelled / deleted meanwhile): amber alert, حفظ / ترحيل disabled with the reason, حذف
+  stays. Post 400 BAD_REQUEST purchaseInvoiceId → "الفاتورة الأصلية لم تعد مُرحّلة" + refresh.
+- **Stock hint** (`GET /product-inventory/inventory/:warehouseId`): under each product "المتاح في المخزن: 196 قطعة ·
+  متوسط التكلفة …"; amber when the return needs more pieces of a product (its lines added up) — a warning on the form;
+  on a DRAFT's details an amber alert + ترحيل disabled. SERVICE: "خدمة — لا تخرج من المخزن".
+- **Refund**: "المبلغ المسترد نقدًا" in TotalsBox (≥ 0, ≤ the preview net, empty = 0). Returns store NO currency:
+  linked amounts are in the invoice's currency (shown from the invoice), the list shows no currency code.
+- The list has no search (the API has none): supplier, status, dates, and `?invoice=<id>` (a removable chip).
+- The server orders a return's lines by id (not the order sent): the details number them that way (post errors match).
 
 ### Adding a new page — checklist
 
@@ -480,7 +510,10 @@ The backend does NOT prevent these yet, so the frontend must keep blocking them:
 - `ALREADY_EXISTS` + field `code` on a create → "تعذر إنشاء كود تلقائي، اضغط حفظ مرة أخرى" (form stays open). The
   server picks a random 6-digit code without checking it is free (backend issue, asked Mazen); the user never typed a
   code, so never "الكود مستخدم بالفعل". Currencies (the user types the code) keep their own message in `CurrencyFormModal`.
-  In tests / the seed script, `createByApi` (`e2e/helpers.js`) and `createOrSkip` retry such a create ONCE.
+  In tests / the seed script, `createByApi` (`e2e/helpers.js`) and `createOrSkip` retry such a create ONCE. UI "add"
+  tests save with `saveWithCodeRetry(page, saveButton, submit?)` (`e2e/helpers.js`): ONLY when the save answers 409
+  ALREADY_EXISTS on `code` it checks the Arabic message, allows that ONE 409 log (`allowConsoleErrorOnce`) and clicks حفظ
+  once more, like a user.
   Never show raw English backend messages to the user. Add new codes/field labels to the maps when new docs arrive.
 
 ### Font size (حجم الخط) — `utils/fontSize.js` + `components/layout/FontSizeMenu.jsx`
@@ -535,7 +568,7 @@ Always check this folder before writing UI. Reuse these instead of re-creating t
 | `BalancePreview`                           | under a balance input: sign hint + live preview "سيتم تسجيله: ..."            |
 | `StatusBadge`                              | Week 2 document status: `<StatusBadge status="POSTED" />` → "مُرحّل" (fixed color, see §8); `<StatusBadge expired />` → "منتهي" (quotation `isExpired`) |
 | `MovementTypeBadge`                        | stock movement type: `<MovementTypeBadge type="PURCHASE" />` → "شراء" — IN types green, OUT types red, تسوية gray (lists in `utils/labels.js`) |
-| `SourceDocumentLink`                       | a stock movement's document number: `<SourceDocumentLink movement={row} />` → "PI-…" as a link to `/purchase-invoices/:sourceId`; another type ("PR", no page yet) plain text; no document "-" (ItemCard, StockMovements) |
+| `SourceDocumentLink`                       | a stock movement's document number: `<SourceDocumentLink movement={row} />` → "PI-…" a link to `/purchase-invoices/:sourceId`, "PR-…" a link to `/purchase-returns/:sourceId`; another type plain text; no document "-" (ItemCard, StockMovements) |
 | `Pagination`                               | under a paginated table: "إجمالي: N", rows per page (20 / 50 / 100), "صفحة X من Y", السابق / التالي — props `meta`, `onPageChange`, `onPageSizeChange` (from `usePaginatedData`) |
 | `SearchSelect`                             | a dropdown you type in (combobox) for long lists (products, suppliers): props like Select + `options` `[{ value, label, sub?, keywords? }]`, `onChange(value)`, `emptyLabel` ("كل الموردين" in filters), `missingLabel` ("<name> (محذوف)"), `aria-label` in table cells. Search ignores case, Arabic letter forms and Arabic-Indic digits; keyboard ↓ ↑ Enter Escape Tab; the list is drawn in a portal (never cut off by a scrolling table) |
 | `UnsavedChangesDialog`                     | the question of `useUnsavedChanges` on a full-page form: red "تجاهل التغييرات" / "البقاء في الصفحة" |
@@ -548,7 +581,7 @@ DataTable extras (optional): `column.render(row, index)` / `renderActions(row, i
 | Component         | Use |
 | ----------------- | --- |
 | `LinesTable`      | the editable lines of a document form: الصنف (SearchSelect: name / code / barcode) · الوحدة (primary unit first, then "كرتونة (12 قطعة)") · الكمية · `priceLabel` (a long one wraps) · خصم البند (% / مبلغ toggle, `showDiscount`) · `extraColumns` · الإجمالي (preview) · delete. Props: `lines`, `onChange`, `products`, `unitsByProduct` + `onLoadUnits` (the page loads / caches the units), `errors` (per row), `highlightIndex` (server line error: red row, scrolled into view), `disabled`; optional `showBaseQuantity` (gray "= 120 قطعة" under the quantity when the factor ≠ 1), `renderLineDetails(line, index, update)` (more fields UNDER the product: invoices' expiry / batch), `getLineLinks(line, index, update)` → `[{ key, label, onClick }]` (more "+ …" links next to "+ ملاحظة للبند"). Built on DataTable (fade + sticky delete column at كبير) |
-| `TotalsBox`       | الإجمالي · الخصم (10%) · الضريبة (14%) · الصافي, money in `<span dir="ltr">`. Details: the server's values. Form: `editor` prop → the discount (نسبة % / مبلغ) and tax inputs + "معاينة" caption. `extraRows` under الصافي: `{ key, label, value, strong?, hint? }` or an input row `{ key, label, input: { value, onChange, error, disabled } }` (invoices: المدفوع / المتبقي). `currencyCaption` (default "المبالغ بالعملة الأساسية") |
+| `TotalsBox`       | الإجمالي · الخصم (10%) · الضريبة (14%) · الصافي, money in `<span dir="ltr">`. Details: the server's values. Form: `editor` prop → the discount (نسبة % / مبلغ) and tax inputs + "معاينة" caption. `extraRows` under الصافي: `{ key, label, value, strong?, hint? }` or an input row `{ key, label, input: { value, onChange, error, disabled } }` (invoices: المدفوع / المتبقي; an input row may have a gray `hint`). `currencyCaption` (default "المبالغ بالعملة الأساسية"). A form without editable rates (linked return): `preview` (the "معاينة" caption) + `ratesNote="من الفاتورة"` |
 | `DocumentActions` | the action buttons: `[{ key, label, icon, variant, to \| onClick, confirm?, disabled?, title? }]`; `confirm.cancelLabel` (default "إلغاء"); `disabled` + `title` = visible but unusable, the reason as a tooltip (e.g. ترحيل without expiry dates); while one runs, all are disabled; errors are shown by the page |
 
 Layout: `MainLayout` (Sidebar + Header + `<Outlet />`), `PageHeader` (title (may be JSX), subtitle, action button slot,
@@ -690,8 +723,10 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
   that existed before was deleted or modified (`updatedAt` / `lastLoginDate` / `isExpired` ignored). The paginated
   `/purchase-quotations` and `/purchase-invoices` are read page by page (pageSize 100).
 - **Allowed leftovers** (documents the backend never lets anyone delete): a NEW quotation with status CONVERTED, and a
-  NEW purchase invoice with status POSTED or CANCELLED (only a DRAFT can be deleted: tests cancel what they posted),
-  each only when its notes contain `"e2e-"`. Every test document's notes contain `e2e-<tag>` (found again with
+  NEW purchase invoice or purchase return with status POSTED or CANCELLED (only a DRAFT can be deleted: tests cancel
+  what they posted — returns before their invoice, a POSTED return blocks the invoice cancel), each only when its notes
+  contain `"e2e-"`. Returns have no `?search=`: tests find theirs with `?supplierId=<their own supplier>`; DRAFT test
+  returns are deleted. Every test document's notes contain `e2e-<tag>` (found again with
   `?search=`); DRAFT invoices (also the ones a conversion made) ARE deleted by the tests (`DELETE /purchase-invoices/:id`).
   Invoice tests post ONLY into their own warehouses with their own products (demo item cards never change), in the
   default currency; a throwaway currency is used only on DRAFTs (a posted invoice locks its currency for ever).
@@ -703,6 +738,8 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
   must NOT be expired needs a validUntil after today.
 - `currencies.spec.js` runs FIRST, alone (Playwright project `currencies`, the others depend on it): it makes a test
   currency the default for a few seconds, which would give a parallel document test the wrong currency.
+- A test that expects one console error only at one moment allows it with `allowConsoleErrorOnce(page, /pattern/)`
+  (each call removes exactly ONE matching error; `filterConsoleErrors` is unit-checked in `e2e/console-errors.spec.js`).
 - Mocked "first call fails" answers: dev StrictMode loads twice on the first render, so fail until the retry is
   clicked (a flag), never "only the 1st call". `test.use({ allowedConsoleErrors: [/status of (400|404)/] })`: ONE
   regex (an array of two is read by Playwright as `[value, options]`).
@@ -720,6 +757,6 @@ The one gradient: the `DataTable` overflow fade (a soft edge shadow), because it
 | ---- | ------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
 | 0    | —            | Foundation (core, UI kit, layout, login)                                                                       | ✅     |
 | 1    | `doc/week1/` | ✅ Branches, Inventories, Categories, Item Units, Customers, Suppliers, Products, Product Stock, Employees, Users | ✅     |
-| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ✅ Stock movements + Item card · ✅ Purchase quotations (+ data router, unsaved-changes guard, SearchSelect, LinesTable / TotalsBox / DocumentActions) · ✅ Purchase invoices (post / cancel move stock, payment, currency, expiry / batch, duplicate bill warning, SourceDocumentLink) · ⏳ Purchase returns | ⏳     |
+| 2    | `doc/week2/` | ✅ Prep: Week 1 breaking changes (تسوية, primary unit lock, item-unit in use), errors / labels, StatusBadge, Pagination, usePaginatedData · ✅ Currencies · ✅ Product units · ✅ Stock movements + Item card · ✅ Purchase quotations (+ data router, unsaved-changes guard, SearchSelect, LinesTable / TotalsBox / DocumentActions) · ✅ Purchase invoices (post / cancel move stock, payment, currency, expiry / batch, duplicate bill warning, SourceDocumentLink) · ✅ Purchase returns (linked / not linked, InvoiceReturnLines, stock hint, refund, saveWithCodeRetry) | ✅     |
 
 Update this table when a page is finished.

@@ -7,8 +7,8 @@
 // (name / currency code / national ID / username / product + unit / document notes); only what is missing is
 // created and the existing ids are reused. Opening stock is added only when the product is not in that
 // warehouse yet. The script NEVER edits or deletes anything, and never touches EGP or the
-// admin account. Documents are only moved on with their own actions (a quotation's status, an invoice's post /
-// cancel) when an earlier run stopped half way.
+// admin account. Documents are only moved on with their own actions (a quotation's status, an invoice's or a
+// return's post / cancel) when an earlier run stopped half way.
 //
 // Needs the backend running (../backend: docker compose up -d). The API URL comes from
 // VITE_API_URL in .env.local (fallback http://localhost:3000).
@@ -336,6 +336,43 @@ const INVOICE_STEPS = {
   POSTED: ["post"],
   CANCELLED: ["post", "cancel"],
 };
+
+// Purchase returns (Week 2): found again by their notes (unique; the list has no search, so every page is read).
+// status = where the return ends: created DRAFT, then posted (the goods LEAVE the warehouse at its average cost) and,
+// for CANCELLED, cancelled (they come back at the same cost). Never one of the 4 LOW products, never the USD invoice.
+// - linked: `invoice` = the notes of a demo invoice above (must be POSTED); lines: [product, unit name, quantity]
+//   of ITS lines (the price, discount share and tax come from the invoice).
+// - not linked: supplier / branch / warehouse + lines [product, unit name, quantity, unitCost] + discount / tax.
+// date = days from today (never before the invoice date). refund = cash the supplier gave back (≤ the net).
+const RETURNS = [
+  {
+    notes: "مرتجع تجريبي 1 — مسحوق غسيل تالف (مربوط بفاتورة)",
+    status: "POSTED", date: -2, reason: "تالف",
+    invoice: "فاتورة تجريبية 1 — منظفات (آجل، مدفوع جزئيًا)",
+    lines: [["مسحوق غسيل أوتوماتيك 3 كيلو", "كرتونة", 2]],
+  },
+  {
+    notes: "مرتجع تجريبي 2 — أطباق زيادة عن المطلوب (مسودة)",
+    status: "DRAFT", date: -1, reason: "زيادة عن المطلوب",
+    invoice: "فاتورة تجريبية 2 — أدوات منزلية (نقدي)",
+    lines: [["أطباق بلاستيك (50 طبق)", "علبة", 10]],
+  },
+  {
+    notes: "مرتجع تجريبي 3 — كلور خطأ في التوريد (ملغي)",
+    status: "CANCELLED", date: -5, reason: "خطأ في التوريد",
+    invoice: "فاتورة تجريبية 1 — منظفات (آجل، مدفوع جزئيًا)",
+    lines: [["كلور 1 لتر", "كرتونة", 3]],
+  },
+  {
+    notes: "مرتجع تجريبي 4 — صابون استحمام بدون فاتورة",
+    status: "POSTED", date: -3, reason: "منتهي الصلاحية", refund: 300,
+    supplier: "شركة القاهرة لمستحضرات التجميل", branch: "فرع الإسكندرية - سموحة", warehouse: W_BORG, tax: 14,
+    lines: [["صابون استحمام 125 جم", "دستة", 2, 260]],
+  },
+];
+
+// The actions that take a new return (DRAFT) to its final status, in order.
+const RETURN_STEPS = INVOICE_STEPS;
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -818,6 +855,109 @@ async function seedPurchaseInvoices(suppliers, branches, warehouses, products) {
   }
 }
 
+// Every purchase return (the list has no search: read page by page).
+async function getAllReturns() {
+  const items = [];
+  for (let page = 1; ; page += 1) {
+    const data = await get(`/purchase-returns?page=${page}&pageSize=100`);
+    items.push(...data.items);
+    if (page >= data.meta.totalPages) return items;
+  }
+}
+
+const returnReport = [];
+
+// Purchase returns: looked up by their notes; a missing one is created (DRAFT, the body built like
+// purchaseReturnsApi.js) and moved to its status: posted (stock out) and, for CANCELLED, cancelled (stock back).
+// One left half way by an earlier run (e.g. still DRAFT) is moved on; never edited.
+async function seedPurchaseReturns(suppliers, branches, warehouses, products) {
+  const existing = await getAllReturns();
+  for (const entry of RETURNS) {
+    let ret = existing.find((item) => item.notes === entry.notes);
+    // What the return moves, for the report: "−12 قطعة مسحوق غسيل…" per STOCK line.
+    let moves = [];
+
+    if (ret) {
+      count("purchase returns", "existed");
+      ret = await get(`/purchase-returns/${ret.id}`);
+    } else {
+      const body = { returnDate: localDay(entry.date), reason: entry.reason, notes: entry.notes };
+      if (entry.refund) body.refundAmount = entry.refund;
+      if (entry.invoice) {
+        const found = await get(`/purchase-invoices?search=${encodeURIComponent(entry.invoice)}&pageSize=100`);
+        const item = found.items.find((invoice) => invoice.notes === entry.invoice);
+        const invoice = item && (await get(`/purchase-invoices/${item.id}`));
+        if (!invoice || invoice.status !== "POSTED") {
+          count("purchase returns", "skipped", `${entry.notes}: its invoice is missing or not POSTED`);
+          continue;
+        }
+        const lines = [];
+        for (const [productName, unitName, quantity] of entry.lines) {
+          const line = invoice.lines.find((l) => l.product?.name === productName && l.itemUnit?.name === unitName);
+          if (!line) break;
+          lines.push({ purchaseInvoiceLineId: line.id, quantity });
+        }
+        if (lines.length !== entry.lines.length) {
+          count("purchase returns", "skipped", `${entry.notes}: a line is not on the invoice`);
+          continue;
+        }
+        Object.assign(body, { purchaseInvoiceId: invoice.id, lines });
+      } else {
+        const supplier = suppliers.get(entry.supplier);
+        const branch = branches.get(entry.branch);
+        const warehouse = warehouses.get(entry.warehouse);
+        if (!supplier || !branch || !warehouse) {
+          count("purchase returns", "skipped", `${entry.notes}: supplier / branch / warehouse missing`);
+          continue;
+        }
+        const lines = [];
+        for (const [productName, unitName, quantity, unitCost] of entry.lines) {
+          const product = products.get(productName);
+          const itemUnitId = product && (await unitId(product, unitName));
+          if (!itemUnitId) break;
+          lines.push({ productId: product.id, itemUnitId, quantity, unitCost });
+        }
+        if (lines.length !== entry.lines.length) {
+          count("purchase returns", "skipped", `${entry.notes}: a product or its unit is missing`);
+          continue;
+        }
+        // Both header discount fields (see purchaseReturnsApi.js).
+        Object.assign(body, {
+          supplierId: supplier.id,
+          branchId: branch.id,
+          warehouseId: warehouse.id,
+          discountPercent: entry.discount?.percent ?? 0,
+          discountValue: entry.discount?.amount ?? 0,
+          taxPercent: entry.tax ?? 0,
+          lines,
+        });
+      }
+      ret = await post("/purchase-returns", body);
+      count("purchase returns", "created");
+    }
+
+    // Move it on to its final status (only the steps it has not done yet).
+    const steps = RETURN_STEPS[entry.status];
+    const done = ["DRAFT", "POSTED", "CANCELLED"].indexOf(ret.status);
+    for (const step of steps.slice(Math.max(done, 0))) {
+      const moved = await call("POST", `/purchase-returns/${ret.id}/${step}`).catch((error) => {
+        count("purchase returns", "skipped", `${entry.notes}: ${step} failed (${error.body?.code} ${error.body?.field})`);
+        return null;
+      });
+      if (!moved) break;
+      ret = moved;
+      const sign = step === "post" ? "−" : "+";
+      moves = moves.concat(
+        ret.lines
+          .filter((line) => line.product?.itemType === "STOCK")
+          .map((line) => `${sign}${Number(line.baseQuantity)} ${line.product.name} (${ret.warehouse?.name})`),
+      );
+    }
+    const moved = moves.length > 0 ? `  [stock: ${moves.join(" · ")}]` : "";
+    returnReport.push(`${ret.code}  ${ret.status.padEnd(9)} ${entry.notes}${moved}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 const MODULE_AR = {
@@ -835,6 +975,7 @@ const MODULE_AR = {
   users: "المستخدمين",
   "purchase quotations": "عروض أسعار الشراء",
   "purchase invoices": "فواتير الشراء",
+  "purchase returns": "مرتجعات الشراء",
 };
 
 function printSummary() {
@@ -858,6 +999,10 @@ function printSummary() {
   if (invoiceReport.length > 0) {
     console.log("\nفواتير الشراء التجريبية — demo purchase invoices:");
     for (const line of invoiceReport) console.log(`  ${line}`);
+  }
+  if (returnReport.length > 0) {
+    console.log("\nمرتجعات الشراء التجريبية — demo purchase returns:");
+    for (const line of returnReport) console.log(`  ${line}`);
   }
 }
 
@@ -883,6 +1028,8 @@ async function main() {
   await seedPurchaseQuotations(suppliers, branches, warehouses, products);
   // Posting moves demo stock (never the 4 LOW products); USD must exist for invoice 3.
   await seedPurchaseInvoices(suppliers, branches, warehouses, products);
+  // Returns: invoices 1 and 2 must be POSTED (returns 1–3); return 4 takes stock out of a demo warehouse.
+  await seedPurchaseReturns(suppliers, branches, warehouses, products);
 
   printSummary();
 }

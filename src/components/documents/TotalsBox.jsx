@@ -13,9 +13,15 @@
 //
 // extraRows (invoices / returns): rows under الصافي, e.g. المدفوع / المتبقي:
 //   { key, label, value, strong?, hint? }  → the amount (+ a small gray hint under it: "مدفوع بالكامل")
-//   { key, label, input: { value, onChange(text), error, disabled } } → an amount input (the typed text), e.g. the
-//                                            المدفوع of a credit invoice; aria-label = the label
+//   { key, label, input: { value, onChange(text), error, disabled, hint? } } → an amount input (the typed text), e.g.
+//                                            the المدفوع of a credit invoice; aria-label = the label; hint = a small
+//                                            gray line under it (returns: "اتركه 0 لو ...")
 // A value null / undefined shows "—" (e.g. a preview that can't be computed yet).
+//
+// A form whose discount / tax are NOT typed (a return linked to an invoice: they come from the invoice):
+//   <TotalsBox {...previewTotals} discountPercent={invoice.discountPercent} taxPercent={invoice.taxPercent}
+//              preview ratesNote="من الفاتورة" />
+//   preview   → the "معاينة" caption without an editor;  ratesNote → a small gray note after الخصم / الضريبة.
 //
 // currencyCaption: the line at the bottom (default "المبالغ بالعملة الأساسية"); a document in another currency
 // names it, e.g. "المبالغ بعملة: دولار أمريكي (USD)".
@@ -67,6 +73,7 @@ function InputRow({ label, input }) {
         />
       </div>
       {input.error && <p className="mt-1 text-xs text-red-600">{input.error}</p>}
+      {input.hint && <p className="mt-1 text-xs text-slate-500">{input.hint}</p>}
     </div>
   );
 }
@@ -108,7 +115,19 @@ function TotalsBox({
   editor,
   extraRows = [],
   currencyCaption = "المبالغ بالعملة الأساسية",
+  preview = false,
+  ratesNote = "",
 }) {
+  // "الخصم (10%)" + the optional gray note ("من الفاتورة").
+  function rateLabel(text, percent) {
+    return (
+      <>
+        {`${text}${percentLabel(percent)}`}
+        {ratesNote && <span className="ms-1 text-xs text-slate-400">{ratesNote}</span>}
+      </>
+    );
+  }
+
   return (
     <div className="ms-auto w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4" role="group" aria-label="الإجماليات">
       <Row label="الإجمالي">
@@ -161,10 +180,10 @@ function TotalsBox({
         </>
       ) : (
         <>
-          <Row label={`الخصم${percentLabel(discountPercent)}`}>
+          <Row label={rateLabel("الخصم", discountPercent)}>
             <Money value={discountValue} />
           </Row>
-          <Row label={`الضريبة${percentLabel(taxPercent)}`}>
+          <Row label={rateLabel("الضريبة", taxPercent)}>
             <Money value={taxValue} />
           </Row>
         </>
@@ -186,7 +205,7 @@ function TotalsBox({
         )}
       </div>
 
-      {editor && <p className="mt-2 text-xs text-slate-500">معاينة — يحسب النظام الإجماليات النهائية عند الحفظ</p>}
+      {(editor || preview) && <p className="mt-2 text-xs text-slate-500">معاينة — يحسب النظام الإجماليات النهائية عند الحفظ</p>}
       <p className="mt-1 text-xs text-slate-400">{currencyCaption}</p>
     </div>
   );

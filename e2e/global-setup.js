@@ -18,9 +18,12 @@
 //   - a NEW quotation with status CONVERTED whose notes contain "e2e-" (a converted quotation stays);
 //   - a NEW purchase invoice with status POSTED or CANCELLED whose notes contain "e2e-" (only a DRAFT can be
 //     deleted; the tests cancel the ones they posted). DRAFT test invoices are deleted (DELETE /purchase-invoices/:id).
+//   - a NEW purchase return with status POSTED or CANCELLED whose notes contain "e2e-" (same rule as the invoices:
+//     the tests cancel the returns they posted, DRAFT test returns are deleted). Their invoices are the tests' own.
 // Those invoices only use the tests' own products / warehouses (the item cards above stay the same) and the
 // default currency (a posted invoice locks its currency: the tests' throwaway currency is only used on DRAFTs).
-// They are dated 2001 (TEST_DOC_DATE in helpers.js): their own PI-2001-… / PQ-2001-… numbers, at the end of the lists.
+// They are dated 2001 (TEST_DOC_DATE in helpers.js): their own PI-2001-… / PQ-2001-… / PR-2001-… numbers, at the end
+// of the lists.
 //
 // When the API is down the check is skipped (the backend tests skip themselves too).
 import { API_URL } from "./helpers.js";
@@ -39,7 +42,7 @@ const LISTS = [
 ];
 
 // Week 2 document lists: data = { items, meta }.
-const PAGINATED_LISTS = ["/purchase-quotations", "/purchase-invoices"];
+const PAGINATED_LISTS = ["/purchase-quotations", "/purchase-invoices", "/purchase-returns"];
 
 const IGNORED_FIELDS = new Set(["updatedAt", "lastLoginDate", "isExpired"]);
 
@@ -47,7 +50,9 @@ const IGNORED_FIELDS = new Set(["updatedAt", "lastLoginDate", "isExpired"]);
 function isAllowedLeftover(path, record) {
   const isTestDocument = String(record.notes ?? "").includes("e2e-");
   if (path === "/purchase-quotations") return isTestDocument && record.status === "CONVERTED";
-  if (path === "/purchase-invoices") return isTestDocument && ["POSTED", "CANCELLED"].includes(record.status);
+  if (path === "/purchase-invoices" || path === "/purchase-returns") {
+    return isTestDocument && ["POSTED", "CANCELLED"].includes(record.status);
+  }
   return false;
 }
 

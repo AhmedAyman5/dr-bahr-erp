@@ -58,6 +58,7 @@ test("a SUPERADMIN sees every link and can open /branches", async ({ page }) => 
     "كارت الصنف",
     "عروض أسعار الشراء",
     "فواتير الشراء",
+    "مرتجعات الشراء",
     "العملاء",
     "الموردين",
     "الموظفين",

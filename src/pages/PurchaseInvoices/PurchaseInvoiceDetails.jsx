@@ -1,6 +1,6 @@
 // One purchase invoice (فاتورة شراء): /purchase-invoices/:id — read only, with the actions.
 // The buttons follow the state machine (week2flow §6.2):
-//   DRAFT      تعديل · ترحيل · حذف       POSTED  إلغاء الفاتورة (not while a POSTED return exists)
+//   DRAFT      تعديل · ترحيل · حذف       POSTED  عمل مرتجع · إلغاء الفاتورة (not while a POSTED return exists)
 //   CANCELLED  (nothing)
 // ترحيل adds every STOCK line to the warehouse (stock cost = the line after discounts, in the default currency);
 // إلغاء takes those quantities out again (refused when part of them was already used).
@@ -9,7 +9,7 @@
 // A DRAFT warns before posting: lines without a required expiry date (ترحيل disabled), a duplicate supplier bill.
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ClipboardList, Pencil, Send, Trash2, XCircle } from "lucide-react";
+import { ClipboardList, Pencil, Send, Trash2, Undo2, XCircle } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import DocumentActions from "../../components/documents/DocumentActions";
 import TotalsBox from "../../components/documents/TotalsBox";
@@ -103,8 +103,17 @@ function InfoItem({ label, children, wide = false }) {
   );
 }
 
+// The invoice's returns (any status); the number opens the return.
 const RETURN_COLUMNS = [
-  { key: "code", label: "رقم المرتجع", render: (row) => <span dir="ltr">{row.code}</span> },
+  {
+    key: "code",
+    label: "رقم المرتجع",
+    render: (row) => (
+      <Link to={`/purchase-returns/${row.id}`} dir="ltr" className="font-medium text-primary hover:underline">
+        {row.code}
+      </Link>
+    ),
+  },
   { key: "returnDate", label: "التاريخ", render: (row) => formatDay(row.returnDate) },
   { key: "status", label: "الحالة", render: (row) => <StatusBadge status={row.status} /> },
   {
@@ -231,7 +240,15 @@ function PurchaseInvoiceDetails() {
         cancelLabel: "رجوع",
       },
     };
-    const byStatus = { DRAFT: [edit, post, remove], POSTED: [cancel], CANCELLED: [] };
+    // A return of this invoice (the new return form starts with this invoice chosen and locked).
+    const makeReturn = {
+      key: "return",
+      label: "عمل مرتجع",
+      icon: Undo2,
+      variant: "secondary",
+      to: `/purchase-returns/new?invoice=${invoice.id}`,
+    };
+    const byStatus = { DRAFT: [edit, post, remove], POSTED: [makeReturn, cancel], CANCELLED: [] };
     return byStatus[invoice.status] ?? [];
   }
 
@@ -397,7 +414,14 @@ function PurchaseInvoiceDetails() {
     const returns = invoice.purchaseReturns ?? [];
     return (
       <section className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-3 text-base font-semibold text-slate-900">المرتجعات</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">المرتجعات</h2>
+          {returns.length > 0 && (
+            <Link to={`/purchase-returns?invoice=${invoice.id}`} className="text-sm font-medium text-primary hover:underline">
+              عرض في قائمة المرتجعات
+            </Link>
+          )}
+        </div>
         {returns.length === 0 ? (
           <p className="text-sm text-slate-500">لا توجد مرتجعات على هذه الفاتورة</p>
         ) : (

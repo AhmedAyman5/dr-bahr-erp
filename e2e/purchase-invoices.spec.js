@@ -237,6 +237,15 @@ test.describe("with backend", () => {
 
   test.afterEach(async ({ request }) => {
     if (!token || !tag) return;
+    // Returns of the test supplier (no ?search= on returns): POSTED → cancelled, DRAFT → deleted.
+    const returnsResponse = await request.get(`${API_URL}/purchase-returns`, {
+      headers: headers(),
+      params: { supplierId: supplier.id, pageSize: 100 },
+    });
+    for (const item of (await returnsResponse.json()).data?.items ?? []) {
+      if (item.status === "POSTED") await request.post(`${API_URL}/purchase-returns/${item.id}/cancel`, { headers: headers() });
+      if (item.status === "DRAFT") await request.delete(`${API_URL}/purchase-returns/${item.id}`, { headers: headers() });
+    }
     // Invoices: POSTED → cancelled (they stay, CANCELLED); DRAFT → deleted.
     for (const invoice of await taggedInvoices(request)) {
       if (invoice.status === "POSTED") await cancelForCleanup(request, invoice);
@@ -728,6 +737,10 @@ test.describe("with backend", () => {
     await expect(page.getByRole("link", { name: "تعديل", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "حذف", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "إلغاء الفاتورة" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "عمل مرتجع" })).toHaveAttribute(
+      "href",
+      `/purchase-returns/new?invoice=${invoice.id}`,
+    );
     // 1500 × (1 − 150 / 1500) / 120 pieces = 11.25 a piece, in the default currency.
     const symbol = defaultCurrency.symbol || defaultCurrency.code;
     await expect(bodyRows(page).first()).toContainText(`تكلفة القطعة في المخزن: 11.25 ${symbol}`);
@@ -750,6 +763,47 @@ test.describe("with backend", () => {
     await page.goto(`/stock-movements?product=${brush.id}&inventory=${warehouseA.id}`);
     await bodyRows(page).filter({ hasText: invoice.code }).getByRole("link", { name: invoice.code }).click();
     await expect(page).toHaveURL(new RegExp(`/purchase-invoices/${invoice.id}$`));
+  });
+
+  // A POSTED return blocks the invoice cancel (real backend; the cancel 400 itself: "action errors" below).
+  test("a POSTED return blocks the cancel: disabled with the reason; the returns table links to each return", async ({
+    page,
+    request,
+  }) => {
+    const invoice = await createInvoice(request, { notes: "مرتجعات" });
+    await postInvoice(request, invoice.id);
+    const lineId = invoice.lines[0].id;
+    const newReturn = (quantity, note) =>
+      createByApi(request, token, "/purchase-returns", {
+        returnDate: addDays(TEST_DOC_DATE, 5),
+        purchaseInvoiceId: invoice.id,
+        lines: [{ purchaseInvoiceLineId: lineId, quantity }],
+        notes: `${tagText()} ${note}`,
+      });
+    // One posted then cancelled, one posted (it blocks the cancel).
+    const cancelled = await newReturn(1, "مرتجع ملغي");
+    await callApi(request, "POST", `/purchase-returns/${cancelled.id}/post`);
+    await callApi(request, "POST", `/purchase-returns/${cancelled.id}/cancel`);
+    const posted = await newReturn(2, "مرتجع مرحل");
+    await callApi(request, "POST", `/purchase-returns/${posted.id}/post`);
+
+    await page.goto(`/purchase-invoices/${invoice.id}`);
+    await expect(page.getByRole("button", { name: "إلغاء الفاتورة" })).toBeDisabled();
+    await expect(page.locator('span[title="عليها مرتجع مُرحّل، ألغِ المرتجع أولًا"]')).toHaveCount(1);
+    const returns = page.locator("section", { has: page.getByRole("heading", { name: "المرتجعات" }) });
+    const rows = returns.locator("tbody tr");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText("ملغي");
+    await expect(rows.nth(1)).toContainText("مُرحّل");
+    await expect(rows.nth(1)).toContainText("307.80");
+    await expect(returns.getByRole("link", { name: cancelled.code })).toHaveAttribute("href", `/purchase-returns/${cancelled.id}`);
+    await expect(returns.getByRole("link", { name: "عرض في قائمة المرتجعات" })).toHaveAttribute(
+      "href",
+      `/purchase-returns?invoice=${invoice.id}`,
+    );
+    await returns.getByRole("link", { name: posted.code }).click();
+    await expect(page).toHaveURL(new RegExp(`/purchase-returns/${posted.id}$`));
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(posted.code);
   });
 
   // ─── 8. Post blocked by a missing expiry date (converted from a quotation) ─────────────────────────────
@@ -1126,29 +1180,6 @@ test.describe("mocked API", () => {
     await next;
     await expect(page.getByText("صفحة 2 من 3")).toBeVisible();
     await expect(bodyRows(page).first()).toContainText("PI-2026-000021");
-  });
-
-  test("a POSTED return blocks the cancel: إلغاء الفاتورة disabled with the reason; the returns table", async ({
-    page,
-  }) => {
-    const purchaseReturns = [
-      { id: "r1", code: "PR-2026-000001", returnDate: "2026-11-22T00:00:00.000Z", status: "POSTED", netTotal: "273.60" },
-      { id: "r2", code: "PR-2026-000002", returnDate: "2026-11-23T00:00:00.000Z", status: "CANCELLED", netTotal: "100" },
-    ];
-    await page.route(`${API_URL}/purchase-invoices/i1`, (route) =>
-      route.fulfill(ok(invoiceItem(1, { status: "POSTED", purchaseReturns }))),
-    );
-    await page.goto("/purchase-invoices/i1");
-    const cancel = page.getByRole("button", { name: "إلغاء الفاتورة" });
-    await expect(cancel).toBeDisabled();
-    await expect(page.locator('span[title="عليها مرتجع مُرحّل، ألغِ المرتجع أولًا"]')).toHaveCount(1);
-    const returns = page.locator("section", { has: page.getByRole("heading", { name: "المرتجعات" }) });
-    await expect(returns.locator("tbody tr")).toHaveCount(2);
-    await expect(returns.locator("tbody tr").first()).toContainText("PR-2026-000001");
-    await expect(returns.locator("tbody tr").first()).toContainText("مُرحّل");
-    await expect(returns.locator("tbody tr").first()).toContainText("273.60");
-    // Plain text for now (purchase returns: Prompt 20).
-    await expect(returns.getByRole("link")).toHaveCount(0);
   });
 
   test.describe("action errors", () => {

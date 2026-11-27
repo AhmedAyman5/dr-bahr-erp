@@ -166,6 +166,25 @@ test.describe("getErrorMessage", () => {
     );
   });
 
+  test("purchase returns: header and line code + field messages", () => {
+    expect(getErrorMessage(apiError("BAD_REQUEST", "purchaseInvoiceId"))).toBe("يجب اختيار فاتورة شراء مُرحّلة");
+    // Feminine (فاتورة), not the general "غير موجود".
+    expect(getErrorMessage(apiError("DOES_NOT_EXIST", "purchaseInvoiceId"))).toBe("فاتورة الشراء غير موجودة أو محذوفة");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "supplierId"))).toBe("المورد يجب أن يكون مورد الفاتورة");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "refundAmount"))).toBe("المبلغ المسترد أكبر من صافي المرتجع");
+    expect(getErrorMessage(apiError("BAD_REQUEST", "lines.1.purchaseInvoiceLineId"))).toBe(
+      "البند رقم 2: هذا البند ليس من بنود الفاتورة",
+    );
+    expect(getErrorMessage(apiError("QUANTITY_EXCEEDED", "lines.0.quantity"))).toBe(
+      "البند رقم 1: الكمية أكبر من المسموح بإرجاعه",
+    );
+    // The other codes on these fields keep the general texts.
+    expect(getErrorMessage(apiError("DOES_NOT_EXIST", "supplierId"))).toBe("المورد غير موجود أو محذوف");
+    expect(getErrorMessage(apiError("VALIDATION_FAILED", "refundAmount"))).toBe(
+      "البيانات المدخلة غير صحيحة، راجع حقل المبلغ المسترد",
+    );
+  });
+
   test("unchanged basics: no response, login, unknown code", () => {
     expect(getErrorMessage(new Error("Network Error"))).toBe("تعذر الاتصال بالخادم، تحقق من الاتصال وحاول مرة أخرى");
     expect(getErrorMessage(apiError("UNAUTHORIZED"), { context: "login" })).toBe("اسم المستخدم أو كلمة المرور غير صحيحة");

@@ -393,9 +393,10 @@ test.describe("mocked API", () => {
     await expectCardRow(rows.nth(3), { type: "إلغاء مرتجع شراء", doc: "PR-2026-000001", inQty: "24", balance: "220", cost: "10.6818", avg: "10.6818" });
     await expectCardRow(rows.nth(4), { type: "تسوية", note: "جرد", outQty: "2", balance: "218", cost: "10.6818", avg: "10.6818" });
 
-    // Document numbers: a purchase invoice is a link to it; a purchase return is plain text (no page yet).
+    // Document numbers: a purchase invoice / a purchase return is a link to it; no document → no link.
     await expect(rows.nth(1).getByRole("link", { name: "PI-2026-000001" })).toHaveAttribute("href", "/purchase-invoices/pi1");
-    await expect(rows.nth(2).getByRole("link")).toHaveCount(0);
+    await expect(rows.nth(2).getByRole("link", { name: "PR-2026-000001" })).toHaveAttribute("href", "/purchase-returns/pr1");
+    await expect(rows.nth(3).getByRole("link", { name: "PR-2026-000001" })).toHaveAttribute("href", "/purchase-returns/pr1");
     await expect(rows.nth(0).getByRole("link")).toHaveCount(0);
 
     // Badge colors: stock in = green, stock out = red, تسوية = neutral gray.

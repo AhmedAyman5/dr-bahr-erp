@@ -19,6 +19,7 @@ import {
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 // Column order in the table. Stacked (StackedCell, so the table fits without scrolling):
@@ -96,7 +97,7 @@ test.describe("with backend", () => {
     const requestPromise = page.waitForRequest(
       (req) => req.url() === `${API_URL}/supplier` && req.method() === "POST",
     );
-    await dialog.getByLabel("الرصيد الافتتاحي").press("Enter");
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () => dialog.getByLabel("الرصيد الافتتاحي").press("Enter"));
     const body = (await requestPromise).postDataJSON();
 
     expect(body).toEqual({
@@ -135,7 +136,7 @@ test.describe("with backend", () => {
     const requestPromise = page.waitForRequest(
       (req) => req.url() === `${API_URL}/supplier` && req.method() === "POST",
     );
-    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
     const body = (await requestPromise).postDataJSON();
     expect(body).toEqual({ name, openingBalance: 0 });
 
@@ -196,7 +197,7 @@ test.describe("with backend", () => {
       const requestPromise = page.waitForRequest(
         (req) => req.url() === `${API_URL}/supplier` && req.method() === "POST",
       );
-      await dialog.getByRole("button", { name: "حفظ" }).click();
+      await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
       expect((await requestPromise).postDataJSON().openingBalance).toBe(item.sent);
 
       // Accepted by the backend (negative balances are allowed, see ../backend/doc/week1/supplier.txt).

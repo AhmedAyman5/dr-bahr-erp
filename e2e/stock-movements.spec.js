@@ -465,9 +465,12 @@ test.describe("mocked API", () => {
       balance: "100",
     });
     await expect(page.getByText("Week 1 opening balance")).toHaveCount(0);
-    // The purchase invoice number links to the invoice; the return number is plain text (no page yet).
+    // The purchase invoice number links to the invoice, the return number to the return.
     await expect(rows.nth(1).getByRole("link", { name: "PI-2026-000001" })).toHaveAttribute("href", "/purchase-invoices/pi1");
-    await expect(rows.nth(0).getByRole("cell").nth(3).getByRole("link")).toHaveCount(0);
+    await expect(rows.nth(0).getByRole("cell").nth(3).getByRole("link", { name: "PR-2026-000001" })).toHaveAttribute(
+      "href",
+      "/purchase-returns/pr1",
+    );
 
     // Badges: out = red, in = green, تسوية = neutral.
     await expect(rows.nth(0).getByText("مرتجع شراء")).toHaveClass(/bg-red-50/);

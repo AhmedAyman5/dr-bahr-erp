@@ -1,4 +1,4 @@
-// The editable LINES of a document form (quotations, invoices; returns later): plain helpers for the
+// The editable LINES of a document form (quotations, invoices, not-linked returns): plain helpers for the
 // line objects that components/documents/LinesTable edits. No React, no API calls.
 //
 // One line in the form (every number is the typed TEXT, like every money input):

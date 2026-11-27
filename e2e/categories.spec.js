@@ -19,6 +19,7 @@ import {
   deleteByTag,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 const IN_USE_MESSAGE =
@@ -76,8 +77,8 @@ test.describe("with backend", () => {
     await expect(dialog.getByLabel("الكود")).toHaveCount(0);
 
     await dialog.getByLabel("الاسم").fill(name);
-    // Enter in a field submits the form.
-    await dialog.getByLabel("الاسم").press("Enter");
+    // Enter in a field submits the form (a random-code collision: حفظ once more, like a user).
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () => dialog.getByLabel("الاسم").press("Enter"));
 
     await expect(dialog).toBeHidden();
     const success = page.getByRole("alert").filter({ hasText: "تمت إضافة التصنيف بنجاح" });

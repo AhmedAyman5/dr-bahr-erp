@@ -1,13 +1,14 @@
 // The document number of a stock movement (رقم المستند), e.g. in كارت الصنف and حركات المخزون.
 //   sourceType "PI" (purchase invoice) → a link to /purchase-invoices/:sourceId
-//   another document ("PR" purchase returns: no page yet) → the number as plain text
+//   sourceType "PR" (purchase return)  → a link to /purchase-returns/:sourceId
+//   another document type (no page yet) → the number as plain text
 //   no document (OPENING / ADJUSTMENT) → "-"
 // Usage: <SourceDocumentLink movement={row} />   (row: sourceType, sourceId, sourceCode)
 import { Link } from "react-router-dom";
 import { formatSourceCode } from "../../utils/format";
 
 // The document types that have a details page.
-const DOCUMENT_PAGES = { PI: "/purchase-invoices" };
+const DOCUMENT_PAGES = { PI: "/purchase-invoices", PR: "/purchase-returns" };
 
 function SourceDocumentLink({ movement }) {
   const text = formatSourceCode(movement);

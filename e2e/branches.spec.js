@@ -16,6 +16,7 @@ import {
   randomTag,
   API_URL,
   API_DOWN_MESSAGE,
+  saveWithCodeRetry,
 } from "./helpers";
 
 // The table row that contains this text.
@@ -75,8 +76,10 @@ test.describe("with backend", () => {
 
     await dialog.getByLabel("الاسم").fill(name);
     await dialog.getByLabel("العنوان").fill("القاهرة، وسط البلد");
-    // Enter in a field submits the form.
-    await dialog.getByLabel("العنوان").press("Enter");
+    // Enter in a field submits the form (a random-code collision: حفظ once more, like a user).
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }), () =>
+      dialog.getByLabel("العنوان").press("Enter"),
+    );
 
     await expect(dialog).toBeHidden();
     const success = page.getByRole("alert").filter({ hasText: "تمت إضافة الفرع بنجاح" });
@@ -214,7 +217,7 @@ test.describe("with backend", () => {
     await dialog.getByLabel("الاسم").fill(name);
 
     const requestPromise = page.waitForRequest((req) => req.method() === "POST");
-    await dialog.getByRole("button", { name: "حفظ" }).click();
+    await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
     expect((await requestPromise).postDataJSON()).toEqual({ name });
 
     await expect(rowWith(page, name).getByRole("cell").nth(2)).toHaveText("-");
@@ -460,5 +463,44 @@ test.describe("mocked API", () => {
         { name: "فرع الكود", address: "طنطا" },
       ]);
     });
+  });
+
+  // e2e/helpers.js saveWithCodeRetry: what the real-backend "add" tests use. No test.use here: the helper itself
+  // allows exactly the ONE 409 log of the collision (any other console error still fails the test).
+  test("saveWithCodeRetry: 409 on code → the message, حفظ once more → saved (exactly 2 POSTs)", async ({ page }) => {
+    const headers = { "Access-Control-Allow-Origin": "*" };
+    const branches = [];
+    let posts = 0;
+    await setFakeSession(page);
+    await page.route(
+      (url) => url.pathname === "/branch",
+      (route) => {
+        if (route.request().method() !== "POST") {
+          return route.fulfill({ status: 200, headers, json: { message: "ok", data: branches } });
+        }
+        // Counted by POST (StrictMode loads the list twice in dev, but never saves twice).
+        posts += 1;
+        if (posts === 1) {
+          return route.fulfill({
+            status: 409,
+            headers,
+            json: { statusCode: 409, message: "code already exists", error: "Conflict", code: "ALREADY_EXISTS", field: "code" },
+          });
+        }
+        const created = { id: "b2", name: "فرع المساعد", code: "branch-111222", address: null };
+        branches.push(created);
+        return route.fulfill({ status: 201, headers, json: { message: "ok", data: created } });
+      },
+    );
+    await page.goto("/branches");
+    await page.getByRole("button", { name: "إضافة فرع" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "إضافة فرع" });
+    await dialog.getByLabel("الاسم").fill("فرع المساعد");
+
+    const response = await saveWithCodeRetry(page, dialog.getByRole("button", { name: "حفظ" }));
+    expect(response.status()).toBe(201);
+    await expect(dialog).toBeHidden();
+    await expect(rowWith(page, "فرع المساعد")).toContainText("branch-111222");
+    expect(posts).toBe(2);
   });
 });
